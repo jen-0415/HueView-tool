@@ -1,0 +1,17 @@
+# Virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Dataset and trained models -- too large for git, already living on Drive
+data/
+models/
+
+# OS clutter
+.DS_Store
+Thumbs.db
+
+# Jupyter (if you use notebooks alongside the scripts)
+.ipynb_checkpoints/
