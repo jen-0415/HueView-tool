@@ -1,23 +1,29 @@
 """
 generate_splits.py
 
-Creates the frozen train/val/test manifest splits, stratified on SCC_label
-(70% train / 20% val / 10% test), plus the train-only image augmentation
-function.
+Creates the frozen train/val/test manifest splits, grouped and stratified
+by PERSON (not by individual photo), so no one's face appears in more than
+one split.
 
-Run once, from the project root, to create:
-    data/processed/train.csv
-    data/processed/val.csv
-    data/processed/test.csv
+Person ID extraction handles three source-dataset naming conventions
+confirmed in this manifest:
+  - FairFace: one photo per identity already -- each row is its own person
+  - LFW: "FirstName_LastName_LFW..." -- true ID is everything before "_LFW"
+    (this is what correctly separates George W. Bush / George Clooney /
+    George Lopez, previously merged into one fake "George")
+  - Everything else: first underscore-delimited token (verified against
+    normal-sized groups, e.g. the Faces94/95/96-style "smille" set)
 
-These three files are then FROZEN: every downstream pipeline (baseline and
-HueView) must read from them directly. The script will refuse to overwrite
-existing split files unless --force is passed.
+Run once, from the project root:
+    python src/preprocessing/generate_splits.py --force
+
+(--force is required this run specifically: the existing train/val/test
+CSVs were built by the old per-photo split and need replacing, not just
+the code going forward.)
 
 Usage:
-    python src/preprocessing/generate_splits.py
-    python src/preprocessing/generate_splits.py --check-only   # re-verify an existing frozen split, no regeneration
-    python src/preprocessing/generate_splits.py --force        # deliberately regenerate (breaks the freeze)
+    python src/preprocessing/generate_splits.py --force
+    python src/preprocessing/generate_splits.py --check-only
 """
 
 import argparse
@@ -30,7 +36,7 @@ from sklearn.model_selection import train_test_split
 
 try:
     from PIL import Image, ImageEnhance
-except ImportError:  # Pillow missing -- augment_image() will raise a clear error if actually called
+except ImportError:
     Image = None
     ImageEnhance = None
 
@@ -38,60 +44,94 @@ SEED = 42
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Generate frozen, SCC_label-stratified train/val/test splits.")
-    parser.add_argument("--manifest", type=Path, default=Path("data/processed/manifest.csv"),
-                         help="Path to the labeled manifest CSV (must already contain SCC_label).")
-    parser.add_argument("--out-dir", type=Path, default=Path("data/processed"),
-                         help="Directory to write train.csv / val.csv / test.csv into.")
-    parser.add_argument("--filename-column", type=str, default="filename",
-                         help="Column that uniquely identifies each image (default: filename).")
-    parser.add_argument("--label-column", type=str, default="SCC_label",
-                         help="Column to stratify the split on (default: SCC_label).")
+    parser = argparse.ArgumentParser(description="Generate frozen, person-grouped, SCC_label-stratified train/val/test splits.")
+    parser.add_argument("--manifest", type=Path, default=Path("data/processed/manifest.csv"))
+    parser.add_argument("--out-dir", type=Path, default=Path("data/processed"))
+    parser.add_argument("--filename-column", type=str, default="filename")
+    parser.add_argument("--label-column", type=str, default="SCC_label")
     parser.add_argument("--force", action="store_true",
-                         help="Overwrite existing split files. Breaks the freeze -- use deliberately.")
-    parser.add_argument("--check-only", action="store_true",
-                         help="Skip generation; just re-run the leakage check against existing split files.")
+                         help="Overwrite existing split files. Required this run: the existing "
+                              "splits were built by the old, leaky per-photo version.")
+    parser.add_argument("--check-only", action="store_true")
     return parser.parse_args()
 
 
-def check_no_leakage(train_df, val_df, test_df, filename_col):
-    """Exits with an error if any filename appears in more than one split."""
-    train_files = set(train_df[filename_col])
-    val_files = set(val_df[filename_col])
-    test_files = set(test_df[filename_col])
+def extract_person_id(df, filename_col):
+    """Person ID extraction, handling FairFace / LFW / numbered-PNG / other
+    naming conventions."""
+    basename = df[filename_col].str.split("/").str[-1]
+
+    is_fairface = basename.str.contains("FairFace", case=False, na=False)
+    is_lfw = basename.str.contains("LFW", case=False, na=False) & ~is_fairface
+    # A second source that reuses Brazilian Faces' plain numeric IDs --
+    # pattern "<number>_<single digit 0-4>.png", e.g. "103_0.png". Without
+    # this, "103_Brazilian Faces103-01_face_1.jpg" (Brazilian Faces) and
+    # "103_0.png" (this other, unrelated source) collide into one fake ID.
+    is_numbered_png = basename.str.match(r"^\d+_\d\.png$", case=False, na=False) & ~is_fairface & ~is_lfw
+    other = ~is_fairface & ~is_lfw & ~is_numbered_png
+
+    person_id = pd.Series(index=df.index, dtype=object)
+    person_id[is_fairface] = "fairface_" + df.index[is_fairface].astype(str)
+    person_id[is_lfw] = basename[is_lfw].str.split("_LFW").str[0]
+    person_id[is_numbered_png] = "pngset_" + basename[is_numbered_png].str.extract(r"^(\d+)_")[0].values
+    person_id[other] = basename[other].str.extract(r"^([^_]+)_")[0].values
+
+    return person_id
+
+
+def build_person_table(df, person_col, label_col):
+    """One row per person, with their majority SCC label. A person whose
+    photos disagree on SCC label is a red flag -- skin tone shouldn't vary
+    per photo, so this usually means two different real people got merged
+    under one extracted ID. Surfaced as a warning, not a hard failure,
+    since it's worth a manual look rather than silently guessing."""
+    grouped = df.groupby(person_col)[label_col]
+    n_unique_labels = grouped.nunique()
+    inconsistent = n_unique_labels[n_unique_labels > 1]
+
+    if len(inconsistent) > 0:
+        print(f"WARNING: {len(inconsistent)} person ID(s) have inconsistent {label_col} across their photos.")
+        print("This usually means two different real people share one extracted ID. Examples:")
+        for pid in inconsistent.index[:5]:
+            print(f"  {pid}: {df.loc[df[person_col] == pid, label_col].value_counts().to_dict()}")
+        print("Using each person's majority label for splitting purposes.\n")
+
+    return grouped.agg(lambda s: s.value_counts().idxmax())  # index=person_id, value=majority SCC label
+
+
+def check_no_person_leakage(train_df, val_df, test_df, person_col):
+    train_people = set(train_df[person_col])
+    val_people = set(val_df[person_col])
+    test_people = set(test_df[person_col])
 
     overlaps = {
-        "train/val": train_files & val_files,
-        "train/test": train_files & test_files,
-        "val/test": val_files & test_files,
+        "train/val": train_people & val_people,
+        "train/test": train_people & test_people,
+        "val/test": val_people & test_people,
     }
-    leaks = {pair: files for pair, files in overlaps.items() if files}
+    leaks = {pair: ids for pair, ids in overlaps.items() if ids}
     if leaks:
-        print("LEAKAGE CHECK FAILED:", file=sys.stderr)
-        for pair, files in leaks.items():
-            sample = sorted(files)[:5]
-            print(f"  {pair}: {len(files)} overlapping filenames, e.g. {sample}", file=sys.stderr)
+        print("PERSON-LEVEL LEAKAGE CHECK FAILED:", file=sys.stderr)
+        for pair, ids in leaks.items():
+            print(f"  {pair}: {len(ids)} shared person IDs, e.g. {sorted(ids)[:5]}", file=sys.stderr)
         sys.exit(1)
 
-    total = len(train_files) + len(val_files) + len(test_files)
-    print(f"OK: no filename appears in more than one split ({total} unique filenames across all three).")
+    total = len(train_people) + len(val_people) + len(test_people)
+    print(f"OK: no person appears in more than one split ({total} unique people across all three).")
 
 
-def generate_splits(df, filename_col, label_col):
-    """70/20/10 stratified split on label_col. First splits off 70% train,
-    then divides the remaining 30% into 20% val / 10% test (test_size=1/3
-    of that remainder)."""
-    if df[filename_col].duplicated().any():
-        dupes = df.loc[df[filename_col].duplicated(), filename_col].unique()[:5]
-        sys.exit(f"ERROR: manifest has duplicate filenames before splitting, e.g. {list(dupes)}. Fix the manifest first.")
+def generate_person_splits(person_label):
+    """70/20/10 stratified split on PEOPLE (not photos), by each person's majority SCC label."""
+    person_ids = person_label.index.to_series()
 
-    train_df, temp_df = train_test_split(
-        df, test_size=0.30, stratify=df[label_col], random_state=SEED
+    train_ids, temp_ids = train_test_split(
+        person_ids, test_size=0.30, stratify=person_label, random_state=SEED
     )
-    val_df, test_df = train_test_split(
-        temp_df, test_size=1 / 3, stratify=temp_df[label_col], random_state=SEED
+    temp_labels = person_label.loc[temp_ids]
+    val_ids, test_ids = train_test_split(
+        temp_ids, test_size=1 / 3, stratify=temp_labels, random_state=SEED
     )
-    return train_df, val_df, test_df
+    return set(train_ids), set(val_ids), set(test_ids)
 
 
 def augment_image(
@@ -102,15 +142,9 @@ def augment_image(
     contrast_range=(0.8, 1.2),
     saturation_range=(0.8, 1.2),
 ):
-    """
-    Random horizontal flip + rotation + color jitter on a single PIL image.
-
-    Call this ONLY inside the training-time image-loading step, for images
-    listed in train.csv (e.g. inside a Dataset.__getitem__ / tf.data .map()
-    step) -- never on val/test images, and never before or during split
-    generation. Augmenting before the split risks near-duplicate images
-    leaking across train/val/test.
-    """
+    """Random horizontal flip + rotation + color jitter on a single PIL image.
+    Call this ONLY at training time, on images listed in train.csv -- never
+    on val/test, and never before/during split generation."""
     if Image is None:
         raise ImportError("Pillow is required for augment_image(). Install with: pip install Pillow")
 
@@ -137,19 +171,19 @@ def main():
     if args.check_only:
         missing = [p for p in (train_path, val_path, test_path) if not p.exists()]
         if missing:
-            sys.exit(f"ERROR: missing split file(s): {[str(p) for p in missing]} -- nothing to check.")
-        train_df = pd.read_csv(train_path)
-        val_df = pd.read_csv(val_path)
-        test_df = pd.read_csv(test_path)
-        check_no_leakage(train_df, val_df, test_df, args.filename_column)
+            sys.exit(f"ERROR: missing split file(s): {[str(p) for p in missing]}")
+        train_df, val_df, test_df = pd.read_csv(train_path), pd.read_csv(val_path), pd.read_csv(test_path)
+        for d in (train_df, val_df, test_df):
+            d["person_id"] = extract_person_id(d, args.filename_column)
+        check_no_person_leakage(train_df, val_df, test_df, "person_id")
         return
 
     existing = [p for p in (train_path, val_path, test_path) if p.exists()]
     if existing and not args.force:
         names = ", ".join(p.name for p in existing)
         sys.exit(
-            f"ERROR: {names} already exist in {out_dir} -- the split is frozen and both pipelines "
-            f"must read the same three files. Pass --force to regenerate deliberately."
+            f"ERROR: {names} already exist -- pass --force to regenerate. Required this run: "
+            f"the existing files were built by the old per-photo (leaky) split."
         )
 
     if not args.manifest.exists():
@@ -159,16 +193,21 @@ def main():
 
     for col in (args.filename_column, args.label_column):
         if col not in df.columns:
-            sys.exit(f"ERROR: column '{col}' not found in {args.manifest}. Available columns: {list(df.columns)}")
+            sys.exit(f"ERROR: column '{col}' not found. Available columns: {list(df.columns)}")
 
     if df[args.label_column].isna().any():
-        sys.exit(
-            f"ERROR: {int(df[args.label_column].isna().sum())} rows have a null {args.label_column}. "
-            f"Run add_scc_labels.py first and resolve any gaps before splitting."
-        )
+        sys.exit(f"ERROR: {int(df[args.label_column].isna().sum())} rows have a null {args.label_column}.")
 
-    train_df, val_df, test_df = generate_splits(df, args.filename_column, args.label_column)
-    check_no_leakage(train_df, val_df, test_df, args.filename_column)
+    df["person_id"] = extract_person_id(df, args.filename_column)
+    person_label = build_person_table(df, "person_id", args.label_column)
+
+    train_people, val_people, test_people = generate_person_splits(person_label)
+
+    train_df = df[df["person_id"].isin(train_people)]
+    val_df = df[df["person_id"].isin(val_people)]
+    test_df = df[df["person_id"].isin(test_people)]
+
+    check_no_person_leakage(train_df, val_df, test_df, "person_id")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     train_df.to_csv(train_path, index=False)
@@ -176,10 +215,15 @@ def main():
     test_df.to_csv(test_path, index=False)
 
     n = len(df)
-    print(f"\nWrote frozen splits to {out_dir.resolve()}:")
-    print(f"  train.csv: {len(train_df):5d} rows ({len(train_df) / n:.1%})")
-    print(f"  val.csv:   {len(val_df):5d} rows ({len(val_df) / n:.1%})")
-    print(f"  test.csv:  {len(test_df):5d} rows ({len(test_df) / n:.1%})")
+    print(f"\nWrote frozen, person-grouped splits to {out_dir.resolve()}:")
+    print(f"  train.csv: {len(train_df):5d} images, {len(train_people):5d} people ({len(train_df)/n:.1%} of images)")
+    print(f"  val.csv:   {len(val_df):5d} images, {len(val_people):5d} people ({len(val_df)/n:.1%} of images)")
+    print(f"  test.csv:  {len(test_df):5d} images, {len(test_people):5d} people ({len(test_df)/n:.1%} of images)")
+
+    print("\nSCC_label distribution per split (should look roughly similar across all three):")
+    for name, d in [("train", train_df), ("val", val_df), ("test", test_df)]:
+        print(f"  {name}: {d[args.label_column].value_counts(normalize=True).sort_index().round(3).to_dict()}")
+
     print("\nReminder: augment_image() must only be applied when loading images from")
     print("train.csv, at training time -- never to val/test, never before this split.")
 
