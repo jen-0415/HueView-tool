@@ -6,9 +6,17 @@ env/
 __pycache__/
 *.pyc
 
-# Dataset and trained models -- too large for git, already living on Drive
+# Dataset -- too large for git, already living on Drive.
+# Track only the small processed outputs (CSVs, JSON), not the raw/cropped
+# images themselves.
 data/*
 !data/processed/
+data/processed/*
+!data/processed/*.csv
+!data/processed/*.json
+!data/processed/*.bak
+
+# Trained models -- too large for git
 models/
 
 # OS clutter
