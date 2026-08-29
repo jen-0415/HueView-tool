@@ -1,27 +1,63 @@
-# Virtual environment
-.venv/
+# =========================
+# Python virtual environment
+# =========================
+.venv*/
 env/
+venv/
 
+# =========================
 # Python cache
+# =========================
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 
-# Dataset -- too large for git, already living on Drive.
-# Track only the small processed outputs (CSVs, JSON), not the raw/cropped
-# images themselves.
+# =========================
+# Dataset
+# =========================
+
+# Ignore everything under data by default
 data/*
+
+# Keep the processed folder visible to Git
 !data/processed/
+
+# Ignore everything inside processed by default
 data/processed/*
+
+# The 224x224 images stay local / on Google Drive
+data/processed/images/
+
+# Keep small processed metadata files in Git
 !data/processed/*.csv
 !data/processed/*.json
 !data/processed/*.bak
 
-# Trained models -- too large for git
+# =========================
+# Trained model files
+# =========================
 models/
+*.h5
+*.keras
 
+# =========================
+# Training/runtime output
+# =========================
+logs/
+*.log
+
+# =========================
+# Jupyter
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# VS Code local settings
+# =========================
+.vscode/
+
+# =========================
 # OS clutter
+# =========================
 .DS_Store
 Thumbs.db
-
-# Jupyter (if you use notebooks alongside the scripts)
-.ipynb_checkpoints/
