@@ -151,24 +151,63 @@ def batch_extract(manifest_csv, filename_col: str = "filename") -> pd.DataFrame:
 
 
 if __name__ == "__main__":
-    # Image roots are defined in path_resolver.DEFAULT_ROOTS / V5_ROOT.
-    MANIFEST = "data/processed/train.csv"  # splits are already frozen
+    import sys
+    import time
 
-    manifest = pd.read_csv(MANIFEST)
-    sample = manifest.head(5)
+    # Image roots come from path_resolver; paths resolve via the frozen table.
+    PROC = Path("data/processed")
+    SPLITS = ["train", "val", "test"]
 
-    print("Running 6.1 on a 5-image sample first.")
-    print("Sanity check: r/g/b means should land roughly 0.3-0.8 for normally")
-    print("exposed skin — values pinned at 0.0 or 1.0 usually mean a bad crop")
-    print("or a path pointing at the wrong file.\n")
+    print("=" * 66)
+    print("PHASE 6.1 — GLOBAL RGB FEATURE EXTRACTION")
+    print("=" * 66)
 
-    sample_result = batch_extract(sample)
-    print(sample_result)
+    # Sanity-check a handful before committing to ~43k images.
+    first = pd.read_csv(PROC / "train.csv")
+    print("\nSample of 5 from train.csv first.")
+    print("Expect r/g/b roughly 0.2-0.8 for normally exposed skin. Values")
+    print("pinned at 0.0 or 1.0 mean a bad crop or a wrong file.\n")
+    print(batch_extract(first.head(5)).to_string(index=False))
 
-    # Once the sample looks right, run it for real on each frozen split and
-    # save the output — Phase 6.2 will load these CSVs to concatenate with
-    # the CNN feature vector:
-    #
-    # for split in ["train", "val", "test"]:
-    #     feats = batch_extract(f"data/processed/{split}.csv")
-    #     feats.to_csv(f"data/processed/baseline_rgb_{split}.csv", index=False)
+    reply = input("\nLook right? Extract all three splits? [y/N] ").strip().lower()
+    if reply != "y":
+        print("Stopped. Nothing written.")
+        sys.exit(0)
+
+    total_start = time.time()
+    for split in SPLITS:
+        path = PROC / f"{split}.csv"
+        if not path.exists():
+            print(f"\n!! {path} not found, skipping.")
+            continue
+
+        df = pd.read_csv(path)
+        print(f"\n{'-' * 66}")
+        print(f"{split}: {len(df)} rows")
+        print("-" * 66)
+
+        t0 = time.time()
+        feats = batch_extract(df)
+        out = PROC / f"baseline_rgb_{split}.csv"
+        feats.to_csv(out, index=False)
+
+        print(f"[6.1] Wrote {out}  ({len(feats)} rows, {time.time() - t0:.0f}s)")
+        if len(feats):
+            desc = feats[["r_mean", "g_mean", "b_mean"]].describe().loc[
+                ["min", "mean", "max"]]
+            print(desc.to_string())
+
+            # A channel mean at a hard 0 or 1 means the image is fully black or
+            # fully saturated — worth catching now rather than after training.
+            extreme = feats[
+                (feats[["r_mean", "g_mean", "b_mean"]] <= 0.001).any(axis=1)
+                | (feats[["r_mean", "g_mean", "b_mean"]] >= 0.999).any(axis=1)
+            ]
+            if len(extreme):
+                print(f"\n  !! {len(extreme)} image(s) have a channel pinned at 0 or 1:")
+                for fn in extreme["filename"].head(5):
+                    print(f"       {fn}")
+
+    print(f"\n{'=' * 66}")
+    print(f"Done in {time.time() - total_start:.0f}s.")
+    print("Next: python src/baseline/undertone.py  (reads these CSVs)")
