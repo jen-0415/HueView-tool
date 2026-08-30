@@ -112,14 +112,24 @@ def batch_extract(manifest_csv, filename_col: str = "filename") -> pd.DataFrame:
         fname = row[filename_col]
 
         if fname in lookup and isinstance(lookup[fname], str):
-            img_path, rule = Path(lookup[fname]), "table"
+            img_path = Path(lookup[fname])
+            rule = "table"
+            # The table was built on a different machine or folder layout.
+            # If the path doesn't exist on disk, fall back to the live resolver.
+            if not img_path.is_file():
+                img_path, rule, _root = resolve_image_path(fname)
+                if img_path is None:
+                    failed.append((fname, "not in table and not found by resolver"))
+                    rule_counts["not_found"] = rule_counts.get("not_found", 0) + 1
+                    continue
         else:
             img_path, rule, _root = resolve_image_path(fname)
-        rule_counts[rule] = rule_counts.get(rule, 0) + 1
+            if img_path is None:
+                failed.append((fname, "no file on disk matches this entry"))
+                rule_counts["not_found"] = rule_counts.get("not_found", 0) + 1
+                continue
 
-        if img_path is None:
-            failed.append((fname, "no file on disk matches this entry"))
-            continue
+        rule_counts[rule] = rule_counts.get(rule, 0) + 1
 
         try:
             r, g, b = extract_features_from_path(img_path)

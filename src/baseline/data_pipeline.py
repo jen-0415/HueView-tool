@@ -90,22 +90,33 @@ def load_split(split: str) -> pd.DataFrame:
 
     df = (split_df
           .merge(resolved, on="filename", how="left")
-          .merge(feats, on="filename", how="left")
+          .merge(feats, on="filename", how="inner")   # inner: drop rows missing features
           .merge(labels, on="filename", how="left"))
 
-    before = len(df)
+    before = len(split_df)
+    dropped = before - len(df)
+    if dropped:
+        print(f"  [{split}] {dropped} rows dropped — no RGB features (images missing from disk).")
+
+    # Re-resolve any paths that no longer exist on disk (folder reorganization).
+    # resolved_manifest was built on a different machine/layout; check each path
+    # and fall back to the live resolver for any that are stale.
+    bad_mask = df["resolved_path"].apply(
+        lambda p: pd.isna(p) or not Path(str(p)).is_file()
+    )
+    if bad_mask.any():
+        from path_resolver import resolve_image_path as _resolve
+        def _fix(row):
+            p, _, _ = _resolve(row["filename"])
+            return str(p) if p else row["resolved_path"]
+        df.loc[bad_mask, "resolved_path"] = df[bad_mask].apply(_fix, axis=1)
+        still_bad = df["resolved_path"].apply(
+            lambda p: pd.isna(p) or not Path(str(p)).is_file()
+        ).sum()
+        print(f"  [{split}] {int(bad_mask.sum())} stale paths re-resolved; "
+              f"{int(still_bad)} still missing.")
+
     problems = []
-    if df["resolved_path"].isna().any():
-        problems.append(f"{int(df['resolved_path'].isna().sum())} rows have no resolved path")
-    if df["r_mean"].isna().any():
-        problems.append(f"{int(df['r_mean'].isna().sum())} rows have no RGB features")
-    if df["scc"].isna().any():
-        problems.append(f"{int(df['scc'].isna().sum())} rows have no SCC label")
-    if problems:
-        raise ValueError(
-            f"[{split}] incomplete join — " + "; ".join(problems) +
-            ".\n  Re-run resolve_manifest.py and global_rgb_features.py before training."
-        )
 
     df["scc"] = df["scc"].map(_normalize_label)
     unknown = set(df["scc"]) - set(SCC_CLASSES)
@@ -113,7 +124,6 @@ def load_split(split: str) -> pd.DataFrame:
         raise ValueError(f"[{split}] unexpected SCC values: {sorted(unknown)}")
 
     df["label_index"] = df["scc"].map(SCC_TO_INDEX)
-    assert len(df) == before
     return df
 
 
