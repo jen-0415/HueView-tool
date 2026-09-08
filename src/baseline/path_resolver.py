@@ -41,7 +41,7 @@ IMAGES = Path("data/processed/images")
 
 ROOT_PROCESSED = IMAGES / "processed"
 ROOT_C2 = IMAGES / "c2_processed"
-ROOT_726 = IMAGES / "processed - 7-26"
+ROOT_726 = IMAGES / "c1_processed"
 ROOT_V5 = IMAGES / "v5_processed"
 
 # Search order per suffix value. First hit wins.

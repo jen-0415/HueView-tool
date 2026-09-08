@@ -61,3 +61,5 @@ logs/
 # =========================
 .DS_Store
 Thumbs.db
+
+check_resolved_path_column.zip
