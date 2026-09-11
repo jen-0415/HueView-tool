@@ -68,6 +68,11 @@ Concretely, for the full_face configuration:
 
     CNN branch (8.1):    one composite image = SSR pixels wherever ANY
                          region's skin mask is True, zeros elsewhere.
+                         Built by having EACH region copy its own pixels
+                         into the composite at its own mask — not by
+                         reusing one region's already-masked .image as if
+                         it held every region's pixels (it can't: .image
+                         is zeroed outside that region's own mask).
     CIELAB branch (8.2): 15 features = the five per-region (L*, a*, b*)
                          triples concatenated in REGION_ORDER. NOT the mean
                          over the union — the manuscript specifies "3 values
@@ -232,6 +237,12 @@ def build_full_face_composite(
             meta={"reason": "all_regions_empty"},
         )
 
+    # Used only as a shape/dtype template for composite/union_mask below --
+    # NOT as the pixel source for the whole union. RegionPatch.image is
+    # zeroed everywhere outside that region's own mask, so reading from any
+    # single region's .image for pixels outside its own footprint would
+    # only ever yield zeros there. Each region writes its own real pixels
+    # into `composite` at its own mask inside the loop below instead.
     reference = usable[0].image
     union_mask = np.zeros(reference.shape[:2], dtype=bool)
     composite = np.zeros_like(reference)
@@ -250,10 +261,15 @@ def build_full_face_composite(
             imputed.append(name)
             continue
         union_mask |= patch.skin_mask
+        # Each region contributes its OWN pixel values at its OWN mask --
+        # patch.image is zeroed everywhere outside that region, so pulling
+        # from any single region's .image for the whole union (the
+        # previous approach) silently dropped every other region's pixels,
+        # making the composite numerically identical to whichever region
+        # happened to be usable first in REGION_ORDER.
+        composite[patch.skin_mask] = patch.image[patch.skin_mask]
         if STATUS_RANK.get(patch.status, 99) > STATUS_RANK.get(worst, 0):
             worst = patch.status
-
-    composite[union_mask] = reference[union_mask]
 
     return ConfigurationOutput(
         image_id=image_id,
