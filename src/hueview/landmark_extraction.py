@@ -50,9 +50,10 @@ Input:
                                           person_id
     data/processed/resolved_manifest.csv -- filename, resolved_path, root,
                                           how
-    data/processed/images/<batch>/<MST-N>/<file> -- used as a fallback
-                                          search space when resolved_path
-                                          doesn't check out
+    data/processed/images/<batch>/<MST-N>/<file> -- searched across all
+                                          four variant folders in order:
+                                          processed, c1_processed,
+                                          c2_processed, v5_processed
 
 Output:
     data/processed/landmarks.npy                  -- float32, shape
@@ -81,7 +82,8 @@ from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
 from tqdm import tqdm
  
-FACES_ROOT = Path("data/processed/faces")
+FACES_ROOT = Path("data/processed/images")
+VARIANT_FOLDERS = ["processed", "c1_processed", "c2_processed", "v5_processed"]
 SPLIT_PATHS = [
     Path("data/processed/train.csv"),
     Path("data/processed/val.csv"),
@@ -146,9 +148,22 @@ def run():
     with mp_vision.FaceLandmarker.create_from_options(options) as landmarker:
         for _, row in tqdm(manifest.iterrows(), total=len(manifest), desc="Phase 7.1"):
             filename = row["filename"]  # e.g. "MST-3/some_image.jpg"
-            img_path = FACES_ROOT / filename
- 
-            if not img_path.exists():
+
+            # Strip the (2) version selector -- these files live in
+            # c2_processed/ under their plain name without the suffix.
+            # e.g. "MST-10/0008_1_0_0_01 (2).jpg" -> "MST-10/0008_1_0_0_01.jpg"
+            search_filename = filename.replace(" (2)", "")
+
+            # Search across variant folders in order -- the CSV filename has
+            # no variant prefix (e.g. "MST-1/face.jpg"), so we try each
+            # subfolder until we find the file.
+            img_path = None
+            for variant in VARIANT_FOLDERS:
+                candidate = FACES_ROOT / variant / search_filename
+                if candidate.exists():
+                    img_path = candidate
+                    break
+            if img_path is None:
                 failures.append({"filename": filename, "reason": "file_not_found"})
                 continue
  

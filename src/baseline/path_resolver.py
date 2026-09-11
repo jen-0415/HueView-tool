@@ -20,7 +20,7 @@ So:
     MST-8/foo (2).jpg    ->  c2_processed/MST-8/foo.jpg
     MST-2/bar.png        ->  v5_processed/MST-2/bar.bmp   (the v5 batch)
 
-`processed - 7-26` matched suffixed rows at 96%, so it appears to be an
+`c1_processed` matched suffixed rows at 96%, so it appears to be an
 earlier snapshot of the same batch as c2_processed. It's kept only as a
 fallback, never as a first choice.
 

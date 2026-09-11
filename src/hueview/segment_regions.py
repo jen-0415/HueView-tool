@@ -5,10 +5,12 @@ Uses Stream A landmarks (7.1) to define 5 region boundaries, applies them
 to the SSR-normalized image (7.2) via binary masking. Landmarks come from
 the raw image; masking happens on the SSR-normalized image, per spec.
 
-Region index groups are the ones confirmed from derive_regions.py's v3 run
+Region index groups are the ones confirmed from derive_regions.py's v5 run
 (forehead/nose_bridge/jawline solidly anchored on official MediaPipe
-groups; left_cheek/right_cheek approximated and visually verified against
-a real photo).
+groups; left_cheek/right_cheek corrected in v5 -- each cheek is now bounded
+by the lower eyelid on the same image side, the nose wing medially, the lip
+line below, and an inset mesh ring laterally, keeping the hull off the ear
+and ensuring all five regions are disjoint).
 
 Input:
     data/processed/landmarks.npy         -- (N, 468, 3) pixel coords, from 7.1
@@ -24,6 +26,7 @@ Output:
 
 from pathlib import Path
 from multiprocessing import Pool, cpu_count
+from itertools import combinations
 
 import cv2
 import numpy as np
@@ -36,17 +39,30 @@ SSR_ROOT = Path("data/processed/faces_ssr")
 OUTPUT_ROOT = Path("data/processed/regions")
 OUTPUT_INDEX_PATH = Path("data/processed/regions_index.csv")
 
-# Confirmed region index groups -- see derive_regions.py / region_reference.png
+# Region landmark index groups generated 2026-09-08 from:
+# data/processed/images/processed/MST-2/rhnorm_Faces 95rhnorm.11_face_1.jpg
+# See derive_regions.py (v5) and region_reference_v5_final.png for derivation.
 REGIONS = {
     "forehead": [10, 21, 46, 52, 53, 54, 55, 63, 65, 66, 67, 70, 103, 105, 107, 109,
-                 251, 276, 282, 283, 284, 285, 293, 295, 296, 297, 300, 332, 334, 336, 338],
-    "left_cheek": [2, 5, 6, 19, 45, 48, 64, 93, 94, 97, 98, 115, 127, 132, 195, 197,
-                   220, 234, 249, 362, 373, 374, 380, 381, 382, 390],
-    "right_cheek": [4, 7, 133, 144, 145, 153, 154, 155, 163, 275, 278, 294, 323, 326,
-                     327, 344, 356, 361, 440, 454],
+                 162, 251, 276, 282, 283, 284, 285, 293, 295, 296, 297, 300, 332, 334, 336, 338],
+    "left_cheek": [7, 48, 64, 97, 98, 115, 133, 137, 138, 144, 145, 153, 154, 155,
+                   163, 177, 215, 220, 227],
+    "right_cheek": [249, 264, 278, 294, 326, 327, 344, 362, 366, 373, 374, 380, 381,
+                    382, 390, 401, 435, 440, 447],
     "nose_bridge": [1, 2, 4, 5, 6, 19, 45, 94, 168, 195, 197, 275],
-    "jawline": [58, 136, 148, 149, 150, 152, 172, 176, 288, 365, 377, 378, 379, 397, 400],
+    "jawline": [136, 148, 149, 150, 152, 172, 176, 365, 377, 378, 379, 397, 400],
 }
+
+_clashes = {
+    f"{a} + {b}": sorted(set(REGIONS[a]) & set(REGIONS[b]))
+    for a, b in combinations(REGIONS, 2)
+    if set(REGIONS[a]) & set(REGIONS[b])
+}
+if _clashes:
+    raise ValueError(
+        f"REGIONS index groups overlap, so their convex hulls will too: {_clashes}. "
+        "Re-derive with derive_regions.py rather than editing indices by hand."
+    )
 
 
 def build_region_mask(landmarks_px, region_indices, shape):

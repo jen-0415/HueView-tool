@@ -1,0 +1,25 @@
+{
+  "primary": {
+    "hue_min_deg": 0.0,
+    "hue_max_deg": 50.0,
+    "sat_min": 0.23,
+    "sat_max": 0.68,
+    "val_min": 0.15,
+    "val_max": 1.0,
+    "hue_wrap_min_deg": null
+  },
+  "relaxed": {
+    "hue_min_deg": 0.0,
+    "hue_max_deg": 60.0,
+    "sat_min": 0.12,
+    "sat_max": 0.85,
+    "val_min": 0.08,
+    "val_max": 1.0,
+    "hue_wrap_min_deg": 340.0
+  },
+  "min_retention": 0.25,
+  "min_pixels": 50,
+  "open_kernel": 3,
+  "close_kernel": 5,
+  "hsv_source": "original"
+}
