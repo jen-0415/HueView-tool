@@ -1,0 +1,18 @@
+[
+  {
+    "model": "Baseline",
+    "n": 2994,
+    "accuracy": 0.6189044756179025,
+    "precision_macro": 0.6709684004007327,
+    "recall_macro": 0.5333265027655734,
+    "f1_macro": 0.5299094992231504
+  },
+  {
+    "model": "HueView (full_face)",
+    "n": 2994,
+    "accuracy": 0.5607882431529726,
+    "precision_macro": 0.4925249958751628,
+    "recall_macro": 0.49733465905884416,
+    "f1_macro": 0.49093293402603305
+  }
+]

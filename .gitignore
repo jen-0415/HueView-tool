@@ -1,0 +1,92 @@
+# =========================
+# Python virtual environment
+# =========================
+.venv*/
+env/
+venv/
+**/env/
+**/venv/
+**/.venv/
+
+# =========================
+# Python cache
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# =========================
+# Node.js / Frontend
+# =========================
+node_modules/
+dist/
+build/
+.next/
+.cache/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =========================
+# Dataset
+# =========================
+
+# Ignore everything under ml_pipeline/data by default
+ml_pipeline/data/*
+
+# Keep the processed folder visible to Git
+!ml_pipeline/data/processed/
+
+# Ignore everything inside processed by default
+ml_pipeline/data/processed/*
+
+# The 224x224 images stay local / on Google Drive
+ml_pipeline/data/processed/images/
+
+# Keep small processed metadata files in Git
+!ml_pipeline/data/processed/*.csv
+!ml_pipeline/data/processed/*.json
+!ml_pipeline/data/processed/*.bak
+
+# =========================
+# Trained model files & Zip archives
+# =========================
+models/
+*.h5
+*.keras
+*.onnx
+*.pkl
+*.task
+check_resolved_path_column.zip
+regions.zip
+
+# =========================
+# Training/runtime output
+# =========================
+logs/
+*.log
+
+# =========================
+# Environment variables (Secrets)
+# =========================
+.env
+.env.local
+.env.development
+.env.production
+
+# =========================
+# Jupyter
+# =========================
+.ipynb_checkpoints/
+
+# =========================
+# VS Code local settings
+# =========================
+.vscode/
+
+# =========================
+# OS clutter
+# =========================
+.DS_Store
+Thumbs.db
