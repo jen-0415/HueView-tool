@@ -1,6 +1,7 @@
 import Card from "../components/Card";
 import ModelCard from "../components/ModelCard";
 import ColorValuesCard from "../components/ColorValuesCard";
+import IlluminationCard from "../components/IlluminationCard";
 import UndertoneCard from "../components/UndertoneCard";
 import RegionTable from "../components/RegionTable";
 import { sccLabel } from "../constants";
@@ -15,7 +16,8 @@ export default function Results({ preview, result, onReset }) {
         <div>
           <h2 className="font-display italic text-3xl">Analysis results</h2>
           <p className="font-mono text-[11px] text-ink-soft mt-2">
-            EfficientNetB0 · STW · baseline {baseline.checkpoint} · hueview {hueview.checkpoint}
+            EfficientNetB0 · STW · baseline {baseline.checkpoint} · hueview{" "}
+            {hueview.checkpoint}
           </p>
         </div>
         <button
@@ -31,19 +33,21 @@ export default function Results({ preview, result, onReset }) {
         className={`rounded-2xl px-6 py-4 mt-6 flex flex-wrap items-center gap-x-4 gap-y-1 border ${agree ? "bg-ok-bg border-ok" : "bg-blush-soft border-accent"
           }`}
       >
-        <span className={`font-display text-xl ${agree ? "text-ok" : "text-accent"}`}>
+        <span
+          className={`font-display text-xl ${agree ? "text-ok" : "text-accent"}`}
+        >
           {agree ? "Both pipelines agree" : "The pipelines disagree"}
         </span>
         <span className="text-sm text-ink-soft">
           {agree
             ? `Both classified this face as ${baseline.scc} — ${sccLabel(baseline.scc)}.`
             : `Baseline read this face as ${baseline.scc} — ${sccLabel(
-              baseline.scc
+              baseline.scc,
             )}; HueView read it as ${hueview.scc} — ${sccLabel(hueview.scc)}.`}
         </span>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr_1fr] gap-6 mt-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr_1fr] gap-6 mt-6 items-start">
         <div>
           <img
             src={result.image.preview || preview}
@@ -59,57 +63,58 @@ export default function Results({ preview, result, onReset }) {
         <ModelCard model={hueview} primary />
       </div>
 
-      <Card className="mt-6">
-        <div className="px-6 py-4 border-b border-line-soft">
-          <div className="font-semibold">Per-image comparison</div>
-          <div className="text-xs text-ink-soft">
-            Single-image outputs from the two pipelines on the same 224 × 224 crop.
-          </div>
-        </div>
+      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6 mt-6 items-start">
+        <IlluminationCard illumination={result.illumination} />
 
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-blush">
-              {["Measure", "Baseline", "HueView"].map((h) => (
-                <th
-                  key={h}
-                  className="px-5 py-3 text-left font-mono text-[10px] tracking-widest text-accent font-normal"
-                >
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            <Row
-              k="Input representation"
-              a="Global RGB average, full crop"
-              b="Six regional patches, SSR-normalized"
-            />
-            <Row
-              k="Predicted class"
-              a={`${baseline.scc} — ${sccLabel(baseline.scc)}`}
-              b={`${hueview.scc} — ${sccLabel(hueview.scc)}`}
-              highlight
-            />
-            <Row
-              k="Color space"
-              a="RGB"
-              b="CIELAB"
-            />
-            <Row
-              k="Undertone rule"
-              a="Normalized RGB ratios, b-ratio threshold"
-              b="Hue angle on regional CIELAB means"
-            />
-            <Row
-              k="Undertone descriptor"
-              a={`${baseline.undertone.label} (b = ${baseline.undertone.b_ratio})`}
-              b={`${hueview.undertone.label} (${hueview.undertone.hue_angle_deg}°)`}
-            />
-          </tbody>
-        </table>
-      </Card>
+        <Card>
+          <div className="px-6 py-4 border-b border-line-soft">
+            <div className="font-semibold">Per-image comparison</div>
+            <div className="text-xs text-ink-soft">
+              Single-image outputs from the two pipelines on the same 224 × 224
+              crop.
+            </div>
+          </div>
+
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-blush">
+                {["Measure", "Baseline", "HueView"].map((h) => (
+                  <th
+                    key={h}
+                    className="px-5 py-3 text-left font-mono text-[10px] tracking-widest text-accent font-normal"
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <Row
+                k="Input representation"
+                a="Global RGB average, full crop"
+                b="Six regional patches, SSR-normalized"
+              />
+              <Row
+                k="Predicted class"
+                a={`${baseline.scc} — ${sccLabel(baseline.scc)}`}
+                b={`${hueview.scc} — ${sccLabel(hueview.scc)}`}
+                highlight
+              />
+              <Row k="Color space" a="RGB" b="CIELAB" />
+              <Row
+                k="Undertone rule"
+                a="Normalized RGB ratios, b-ratio threshold"
+                b="Hue angle on regional CIELAB means"
+              />
+              <Row
+                k="Undertone descriptor"
+                a={`${baseline.undertone.label} (b = ${baseline.undertone.b_ratio})`}
+                b={`${hueview.undertone.label} (${hueview.undertone.hue_angle_deg}°)`}
+              />
+            </tbody>
+          </table>
+        </Card>
+      </div>
 
       <div className="mt-6">
         <ColorValuesCard baseline={baseline} hueview={hueview} />
@@ -131,7 +136,11 @@ function Row({ k, a, b, highlight }) {
     <tr className="border-t border-line-soft">
       <td className="px-5 py-3 text-ink-soft">{k}</td>
       <td className={`px-5 py-3 ${highlight ? "font-semibold" : ""}`}>{a}</td>
-      <td className={`px-5 py-3 ${highlight ? "font-semibold text-accent" : ""}`}>{b}</td>
+      <td
+        className={`px-5 py-3 ${highlight ? "font-semibold text-accent" : ""}`}
+      >
+        {b}
+      </td>
     </tr>
   );
 }

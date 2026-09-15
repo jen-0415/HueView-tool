@@ -13,6 +13,22 @@ export const MOCK_RESULT = {
   image: { width: 224, height: 224, preview: null },
   detection: { confidence: 0.97, landmarks_found: 5, upscaled: false },
 
+  // Phase 3 illumination binning. Describes the INPUT image, not either model,
+  // so it sits outside the `models` block.
+  // REPLACE centroids and boundaries with your manuscript's k-means++ values.
+  illumination: {
+    metric: "Mean luminance",
+    value: 118.4,
+    scale: [0, 255],
+    bin: "Medium",
+    bin_index: 2,
+    bins: [
+      { name: "Low", centroid: 78.2, range: [0, 104.9] },
+      { name: "Medium", centroid: 131.5, range: [104.9, 158.9] },
+      { name: "High", centroid: 186.3, range: [158.9, 255] },
+    ],
+  },
+
   models: {
     baseline: {
       name: "Baseline",
