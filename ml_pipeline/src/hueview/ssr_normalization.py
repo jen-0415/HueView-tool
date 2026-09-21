@@ -1,31 +1,26 @@
 """
-SSR (Single-Scale Retinex) Illumination Normalization
+SSR (Single-Scale Retinex) Illumination Correction
+
 Phase 7, Stream B (parallel to 7.1) -- HueView
 
-R(x,y) = log(I(x,y)) - log(F(x,y) * I(x,y)), F = Gaussian(sigma=80)
-Applied independently per channel, rescaled to 0-255. The SSR formula
-itself is UNCHANGED from the original.
+SSR is used to estimate illumination variation. The SSR response is
+converted into a correction factor that is applied to the original
+facial image.
 
-Job list comes from landmarks_index.csv (Phase 7.1's output) rather than
-scanning a folder -- that file already contains exactly the images that
-successfully got landmarks, so there's no point re-deriving "which images
-have landmarks" here, and no point SSR-normalizing an image that has none
-to build regions from in 7.3.
+The correction is performed independently per channel using a Gaussian
+illumination estimate with sigma=30.
 
-Each filename is resolved to its real file across the four batch folders
-(processed/, c1_processed/, c2_processed/, v5_processed/) via
-path_resolver.resolve_image_path -- the same resolver every other script
-uses -- instead of assuming a single flat data/processed/faces/ folder,
-which doesn't exist in this dataset layout.
+Job list comes from landmarks_index.csv (Phase 7.1's output) -- only
+images that successfully got landmarks are processed.
 
-Output mirrors your MST-N/ structure under data/processed/faces_ssr/.
+Images are looked up directly under data/processed/images/MST-N/.
+Output mirrors that MST-N/ structure under data/processed/faces_ssr/.
 
 Paths are anchored to <project_root> (the folder containing "data/"), found
-by walking up from this file's own location -- works the same whether you
-run it from the project root, from src/hueview, or via an IDE "run" button.
+by walking up from this file's own location.
 """
 
-import sys
+import re
 from pathlib import Path
 from multiprocessing import Pool, cpu_count
 
@@ -34,112 +29,206 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+
 # ------------------------------------------------------------ project root --
 
-
 def find_project_root(start: Path, marker: str = "data") -> Path:
-    """Walk upward from `start` until a directory containing `marker` is found."""
+    """Walk upward until a directory containing `marker` is found."""
     for candidate in [start] + list(start.parents):
         if (candidate / marker).is_dir():
             return candidate
-    return start  # fallback: marker not found anywhere above `start`
+    return start
 
 
 PROJECT_ROOT = find_project_root(Path(__file__).resolve().parent)
 
-# path_resolver.py lives under src/baseline/ -- add src/ to the path so this
-# script can import it regardless of where it's run from.
-sys.path.insert(0, str(PROJECT_ROOT / "src"))
-from ml_pipeline.src.baseline.path_resolver import resolve_image_path  # noqa: E402
 
 # ---------------------------------------------------------------- config --
 
+IMAGES_ROOT = PROJECT_ROOT / "data" / "processed" / "images"
 LANDMARKS_INDEX_PATH = PROJECT_ROOT / "data" / "processed" / "landmarks_index.csv"
 OUTPUT_ROOT = PROJECT_ROOT / "data" / "processed" / "faces_ssr"
 
-SIGMA = 80.0
-EPSILON = 1.0                      # avoids log(0); standard in Retinex implementations
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
-SAMPLE_SIZE = None                 # e.g. 20 to sanity-check output before the full run
+SIGMA = 30.0
+EPSILON = 1.0
+SAMPLE_SIZE = 0 
+
 
 # ------------------------------------------------------------------- SSR --
 
+def apply_ssr(
+    image: np.ndarray,
+    sigma: float = SIGMA,
+    epsilon: float = EPSILON,
+) -> np.ndarray:
+    """
+    SSR-derived illumination correction.
 
-def apply_ssr(image: np.ndarray, sigma: float = SIGMA, epsilon: float = EPSILON) -> np.ndarray:
-    """Single-Scale Retinex, applied independently to each channel. Unchanged
-    from the original -- this formula was never the part that was broken."""
+    SSR is computed independently for each channel:
+
+        R(x,y) = log(I(x,y)) - log(L(x,y))
+
+    where L(x,y) is the Gaussian-blurred illumination estimate.
+
+    The SSR response is converted into a correction factor and applied
+    to the original facial image.
+    """
+
     img = image.astype(np.float64) + epsilon
-    out = np.empty_like(img)
+    corrected = np.empty_like(img)
 
     for c in range(img.shape[2]):
         channel = img[:, :, c]
-        illumination = cv2.GaussianBlur(channel, (0, 0), sigmaX=sigma, sigmaY=sigma)
+
+        # Estimate illumination
+        illumination = cv2.GaussianBlur(
+            channel,
+            (0, 0),
+            sigmaX=sigma,
+            sigmaY=sigma
+        )
+
+        # SSR response
         retinex = np.log(channel) - np.log(illumination)
 
-        r_min, r_max = retinex.min(), retinex.max()
-        span = r_max - r_min
-        out[:, :, c] = 0.0 if span < 1e-6 else (retinex - r_min) / span * 255.0
+        # Convert SSR response into correction factor
+        correction = np.exp(retinex)
 
-    return np.clip(out, 0, 255).astype(np.uint8)
+        # Normalize correction around 1.0
+        correction_mean = correction.mean()
+
+        if correction_mean > 1e-6:
+            correction /= correction_mean
+
+        # Prevent extreme corrections
+        correction = np.clip(correction, 0.5, 2.0)
+
+        # Apply correction to the original image
+        corrected[:, :, c] = channel * correction
+
+    return np.clip(corrected, 0, 255).astype(np.uint8)
+
 
 # --------------------------------------------------------------- worker --
 
-
 def process_one(paths):
     src_path, dst_path = paths
+
     try:
         img = cv2.imread(str(src_path), cv2.IMREAD_COLOR)
+
         if img is None:
             return (str(src_path), "unreadable")
+
         result = apply_ssr(img)
+
         dst_path.parent.mkdir(parents=True, exist_ok=True)
+
         ok = cv2.imwrite(str(dst_path), result)
+
         if not ok:
             return (str(src_path), "write failed")
+
         return None
+
     except Exception as e:
         return (str(src_path), repr(e))
 
 
 # ------------------------------------------------------------- job list --
 
-
 def collect_jobs():
-    """Job list = every image landmark_extraction.py successfully processed
-    (landmarks_index.csv already excludes failures -- no separate exclusion
-    list needed here). Each filename is resolved to its real file across
-    the 4 batch folders via path_resolver.resolve_image_path, so this reads
-    identical bytes to every other script instead of assuming a flat
-    faces/ folder.
-
-    Returns (jobs, unresolved) where jobs is a list of (src_path, dst_path)
-    tuples and unresolved is a list of filenames path_resolver couldn't
-    find anywhere.
     """
+    Job list = every image in landmarks_index.csv, found under
+    data/processed/images/MST-N/.
+
+    Matching order:
+      1. path   -- exact relative path (e.g. "MST-3/x.jpg")
+      2. copy   -- "x (2).jpg" in the CSV renamed to "x_1.jpg" on disk,
+                   same MST folder
+      3. name   -- exact filename, any folder
+      4. lower  -- filename, ignoring case
+      5. stem   -- filename without extension, ignoring case (.png vs .jpg)
+    Rules 3-5 are used only if they point to exactly one file.
+    """
+
     if not LANDMARKS_INDEX_PATH.is_file():
         raise SystemExit(
-            f"ERROR: {LANDMARKS_INDEX_PATH} not found -- run landmark_extraction.py (7.1) first."
+            f"ERROR: {LANDMARKS_INDEX_PATH} not found -- "
+            f"run landmark_extraction.py (7.1) first."
         )
 
-    index_df = pd.read_csv(LANDMARKS_INDEX_PATH)
-    jobs = []
-    unresolved = []
+    if not IMAGES_ROOT.is_dir():
+        raise SystemExit(f"ERROR: {IMAGES_ROOT} not found.")
 
-    for filename in index_df["filename"]:
-        src_path, rule, root = resolve_image_path(filename)
-        if src_path is None:
+    by_name, by_lower, by_stem = {}, {}, {}
+
+    for p in IMAGES_ROOT.rglob("*"):
+        if p.suffix.lower() in IMAGE_EXTS:
+            by_name.setdefault(p.name, []).append(p)
+            by_lower.setdefault(p.name.lower(), []).append(p)
+            by_stem.setdefault(p.stem.lower(), []).append(p)
+
+    print(f"Found {sum(len(v) for v in by_name.values())} images under {IMAGES_ROOT}")
+
+    def unique(table, key):
+        hits = table.get(key, [])
+        return hits[0] if len(hits) == 1 else None
+
+    index_df = pd.read_csv(LANDMARKS_INDEX_PATH)
+
+    jobs, unresolved = [], []
+    counts = {"path": 0, "copy": 0, "name": 0, "lower": 0, "stem": 0}
+
+    for filename in index_df["filename"].astype(str):
+        name = Path(filename).name
+        direct = IMAGES_ROOT / filename
+
+        # "x (2).jpg" in CSV was renamed to "x_1.jpg" on disk
+        renamed = re.sub(
+            r" \((\d+)\)(?=\.\w+$)",
+            lambda m: f"_{int(m.group(1)) - 1}",
+            filename,
+        )
+
+        if direct.is_file():
+            src_path, how = direct, "path"
+        elif renamed != filename and (IMAGES_ROOT / renamed).is_file():
+            src_path, how = IMAGES_ROOT / renamed, "copy"
+        elif (p := unique(by_name, name)):
+            src_path, how = p, "name"
+        elif (p := unique(by_lower, name.lower())):
+            src_path, how = p, "lower"
+        elif (p := unique(by_stem, Path(name).stem.lower())):
+            src_path, how = p, "stem"
+        else:
             unresolved.append(filename)
             continue
-        jobs.append((src_path, OUTPUT_ROOT / filename))
+
+        counts[how] += 1
+        dst_path = OUTPUT_ROOT / src_path.relative_to(IMAGES_ROOT)
+        jobs.append((src_path, dst_path))
+
+    print(f"Matched by: {counts}")
 
     return jobs, unresolved
 
 
+# ------------------------------------------------------------------- main --
+
 def main():
     print(f"Project root: {PROJECT_ROOT}")
+    print(f"SSR sigma: {SIGMA}")
 
     all_jobs, unresolved = collect_jobs()
-    print(f"{LANDMARKS_INDEX_PATH.name}: {len(all_jobs)} resolved, {len(unresolved)} unresolved")
+
+    print(
+        f"{LANDMARKS_INDEX_PATH.name}: "
+        f"{len(all_jobs)} resolved, "
+        f"{len(unresolved)} unresolved"
+    )
 
     if unresolved:
         log_path = PROJECT_ROOT / "ssr_unresolved.log"
@@ -148,22 +237,38 @@ def main():
 
     if SAMPLE_SIZE:
         all_jobs = all_jobs[:SAMPLE_SIZE]
-        print(f"SAMPLE_SIZE set -- only processing {len(all_jobs)} images")
+        print(
+            f"SAMPLE_SIZE set -- "
+            f"only processing {len(all_jobs)} images"
+        )
 
-    print(f"Total: {len(all_jobs)} images, {cpu_count()} workers")
+    print(
+        f"Total: {len(all_jobs)} images, "
+        f"{cpu_count()} workers"
+    )
 
     failures = []
+
     with Pool(processes=cpu_count()) as pool:
-        for result in tqdm(pool.imap_unordered(process_one, all_jobs), total=len(all_jobs)):
+        for result in tqdm(
+            pool.imap_unordered(process_one, all_jobs),
+            total=len(all_jobs)
+        ):
             if result is not None:
                 failures.append(result)
 
-    print(f"Finished. {len(failures)} failed out of {len(all_jobs)}.")
+    print(
+        f"Finished. {len(failures)} failed "
+        f"out of {len(all_jobs)}."
+    )
+
     if failures:
         log_path = PROJECT_ROOT / "ssr_failures.log"
+
         with open(log_path, "w") as f:
             for path, err in failures:
                 f.write(f"{path}\t{err}\n")
+
         print(f"Failures logged to {log_path}")
 
 
