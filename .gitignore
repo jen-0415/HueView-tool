@@ -90,3 +90,10 @@ logs/
 # =========================
 .DS_Store
 Thumbs.db
+
+# Ignore generated QA visual outputs and results
+results/qa_visualizations/
+results/phase7_routing_log.csv
+ml_pipeline/data/processed/phase7_4_full_coverage_stats.csv
+ml_pipeline/data/processed/phase7_4_failures.csv
+ml_pipeline/data/processed/phase7_5_failures.csv
