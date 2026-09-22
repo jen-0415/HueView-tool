@@ -14,10 +14,10 @@ Job list comes from landmarks_index.csv (Phase 7.1's output) -- only
 images that successfully got landmarks are processed.
 
 Images are looked up directly under data/processed/images/MST-N/.
-Output mirrors that MST-N/ structure under data/processed/faces_ssr/.
+Output mirrors that MST-N/ structure under data/processed/images_ssr/.
 
 Paths are anchored to <project_root> (the folder containing "data/"), found
-by walking up from this file's own location.
+by walking up from this file's own location.    
 """
 
 import re
@@ -47,7 +47,7 @@ PROJECT_ROOT = find_project_root(Path(__file__).resolve().parent)
 
 IMAGES_ROOT = PROJECT_ROOT / "data" / "processed" / "images"
 LANDMARKS_INDEX_PATH = PROJECT_ROOT / "data" / "processed" / "landmarks_index.csv"
-OUTPUT_ROOT = PROJECT_ROOT / "data" / "processed" / "faces_ssr"
+OUTPUT_ROOT = PROJECT_ROOT / "data" / "processed" / "images_ssr"
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
