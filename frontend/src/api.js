@@ -33,9 +33,16 @@ export async function detect(file) {
 /* 2. Run both pipelines, streaming stage progress                   */
 /*    onStage({ key, status, ms })  -> fired six times               */
 /*    onResult(payload)             -> fired once at the end         */
+/*                                                                   */
+/*    Returns a cancel() function. Call it when leaving the          */
+/*    analyzing screen (browser Back, reset) so the SSE connection   */
+/*    closes and no callbacks fire after the user has moved on.      */
 /* ---------------------------------------------------------------- */
 export function analyze(file, onStage, onResult, onError) {
   if (USE_MOCK) return mockAnalyze(onStage, onResult);
+
+  let cancelled = false;
+  let es = null;
 
   const body = new FormData();
   body.append("image", file);
@@ -43,29 +50,52 @@ export function analyze(file, onStage, onResult, onError) {
   fetch(`${BASE}/api/analyze`, { method: "POST", body })
     .then((r) => r.json())
     .then(({ job_id }) => {
-      const es = new EventSource(`${BASE}/api/analyze/${job_id}/events`);
+      if (cancelled) return; // user left before the job id came back
 
-      es.addEventListener("stage", (e) => onStage(JSON.parse(e.data)));
+      es = new EventSource(`${BASE}/api/analyze/${job_id}/events`);
+
+      es.addEventListener("stage", (e) => {
+        if (!cancelled) onStage(JSON.parse(e.data));
+      });
       es.addEventListener("result", (e) => {
-        onResult(JSON.parse(e.data).data);
+        if (!cancelled) onResult(JSON.parse(e.data).data);
         es.close();
       });
-      es.addEventListener("error", (e) => {
-        onError(new Error("Analysis failed. Check that the API is running."));
+      es.addEventListener("error", () => {
+        if (!cancelled) {
+          onError(new Error("Analysis failed. Check that the API is running."));
+        }
         es.close();
       });
     })
-    .catch(() => onError(new Error("Could not reach the API.")));
+    .catch(() => {
+      if (!cancelled) onError(new Error("Could not reach the API."));
+    });
+
+  return () => {
+    cancelled = true;
+    es?.close();
+  };
 }
 
 /* Fake stream so the UI is fully demo-able with no backend. */
-async function mockAnalyze(onStage, onResult) {
-  const timings = [420, 560, 900, 1100, 380, 440];
-  for (let i = 0; i < STAGES.length; i++) {
-    onStage({ key: STAGES[i].key, status: "running" });
-    await sleep(timings[i]);
-    onStage({ key: STAGES[i].key, status: "done", ms: timings[i] });
-  }
-  await sleep(300);
-  onResult(MOCK_RESULT);
+function mockAnalyze(onStage, onResult) {
+  let cancelled = false;
+
+  (async () => {
+    const timings = [420, 560, 900, 1100, 380, 440];
+    for (let i = 0; i < STAGES.length; i++) {
+      if (cancelled) return;
+      onStage({ key: STAGES[i].key, status: "running" });
+      await sleep(timings[i]);
+      if (cancelled) return;
+      onStage({ key: STAGES[i].key, status: "done", ms: timings[i] });
+    }
+    await sleep(300);
+    if (!cancelled) onResult(MOCK_RESULT);
+  })();
+
+  return () => {
+    cancelled = true;
+  };
 }

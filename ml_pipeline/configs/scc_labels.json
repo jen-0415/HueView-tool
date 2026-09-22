@@ -1,0 +1,26 @@
+[
+  {
+    "id": "SCC-1",
+    "label": "Very Light"
+  },
+  {
+    "id": "SCC-2",
+    "label": "Light"
+  },
+  {
+    "id": "SCC-3",
+    "label": "Medium"
+  },
+  {
+    "id": "SCC-4",
+    "label": "Olive"
+  },
+  {
+    "id": "SCC-5",
+    "label": "Brown"
+  },
+  {
+    "id": "SCC-6",
+    "label": "Deep"
+  }
+]

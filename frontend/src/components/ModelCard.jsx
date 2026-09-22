@@ -4,10 +4,11 @@ import { sccLabel } from "../constants";
 
 // One component renders BOTH models. Same structure = same visual weight,
 // and it makes it impossible to accidentally flatter one pipeline.
-// Color values are deliberately not here — see ColorValuesCard.
+// Color values are deliberately not here -- see ColorValuesCard.
 export default function ModelCard({ model, primary = false }) {
   const tint = primary ? "text-accent" : "text-ink-soft";
   const head = primary ? "bg-blush-soft" : "bg-neutraltone";
+  const undertoneLabel = model.undertone?.label;
 
   return (
     <Card className={primary ? "border-accent" : ""}>
@@ -34,8 +35,21 @@ export default function ModelCard({ model, primary = false }) {
         />
 
         <div className={`font-display text-[26px] mt-6 ${tint}`}>
-          {model.scc} · {sccLabel(model.scc)}
-          {model.undertone ? `, ${model.undertone.label}` : ""}
+          {model.scc ? (
+            <>
+              {model.scc} &middot; {sccLabel(model.scc)}
+              {undertoneLabel ? `, ${undertoneLabel}` : ""}
+            </>
+          ) : (
+            <>
+              Awaiting trained model
+              {/* Undertone is rule-based, not learned -- it's real right now
+                  even though SCC classification is still pending weights.
+                  Worth showing rather than hiding behind the same "pending"
+                  state as the classification. */}
+              {undertoneLabel ? ` \u00b7 ${undertoneLabel} undertone` : ""}
+            </>
+          )}
         </div>
       </div>
     </Card>

@@ -50,6 +50,16 @@ ml_pipeline/data/processed/images/
 !ml_pipeline/data/processed/*.bak
 
 # =========================
+# Dataset (root data/ folder -- this project's actual working data)
+# =========================
+data/*
+!data/processed/
+data/processed/*
+!data/processed/*.csv
+!data/processed/*.json
+!data/processed/*.bak
+
+# =========================
 # Trained model files & Zip archives
 # =========================
 models/
