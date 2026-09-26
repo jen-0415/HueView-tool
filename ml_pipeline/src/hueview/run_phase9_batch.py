@@ -31,7 +31,7 @@ only") -- not a QA sample.
 Input:
     data/processed/landmarks_index.csv
     data/processed/label_maps/<filename, .png>        -- from 7.4
-    data/processed/faces_ssr/<filename>                -- from 7.2 (sigma = 30)
+    data/processed/images_ssr/<filename>               -- from 7.2 (sigma = 30)
     (original pre-SSR crop via path_resolver -- diagnostic mode only)
 
 Output:
@@ -88,7 +88,7 @@ from ml_pipeline.src.hueview.undertone import compute_undertone_descriptor  # no
 
 INDEX_PATH = PROJECT_ROOT / "data" / "processed" / "landmarks_index.csv"
 LABEL_MAPS_ROOT = PROJECT_ROOT / "data" / "processed" / "label_maps"
-SSR_ROOT = PROJECT_ROOT / "data" / "processed" / "faces_ssr"
+SSR_ROOT = PROJECT_ROOT / "data" / "processed" / "images_ssr"
 OUT_PATH = PROJECT_ROOT / "data" / "processed" / "phase9_undertone.csv"
 FAILURES_PATH = PROJECT_ROOT / "data" / "processed" / "phase9_failures.csv"
 
