@@ -4,7 +4,13 @@ Phase 7.4 -- Full-Dataset HSV Skin Filtering (batch run)
 Runs the frozen Phase 7.4 methodology (configs/hsv_skin_thresholds.json,
 hsv_source="original") across the full landmarked dataset.
 
-Packs geometric & skin masks via encode_label_map() into ONE PNG per image.
+Packs geometric & skin masks via encode_label_map() into ONE PNG per image,
+saved as label_maps/<exact manifest filename>.png (" (2)" kept -- it marks a
+different image, the c2_processed copy).
+
+Expects data/processed/images/ rebuilt from resolved_manifest.csv
+(rebuild_images_from_manifest.py) and SSR images in data/processed/images_ssr/
+(ssr_normalization.py, sigma = 30), both under the exact manifest filenames.
 """
 
 import os
@@ -229,12 +235,16 @@ def process_one(args):
 
     label_map = encode_label_map(patches, ssr_rgb.shape[:2])
     
-    # Save encoded label map using clean path
-    str_file_clean = re.sub(r"\s*\(\d+\)", "", str(filename).replace("\\", "/"))
-    if "images/" in str_file_clean:
-        str_file_clean = str_file_clean.split("images/")[-1]
-        
-    out_path = LABEL_MAPS_ROOT / Path(str_file_clean).with_suffix(".png")
+    # Save the encoded label map under the EXACT manifest filename (only the
+    # extension becomes .png). Do NOT strip " (2)": in this dataset " (2)" marks
+    # the c2_processed copy, a different image from the same name without it,
+    # so stripping it made two images share -- and overwrite -- one label map.
+    # Phases 7.5, 9 and visual_qa look label maps up by the exact filename.
+    str_file = str(filename).replace("\\", "/")
+    if "images/" in str_file:
+        str_file = str_file.split("images/")[-1]
+
+    out_path = LABEL_MAPS_ROOT / Path(str_file).with_suffix(".png")
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     ok = cv2.imwrite(str(out_path), label_map)

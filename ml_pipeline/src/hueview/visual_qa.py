@@ -1,8 +1,11 @@
 """
 Phase 7 Visual Inspection QA Script
 
-Overlay 5 regional geometric masks and HSV skin masks onto a random sample 
+Overlay 5 regional geometric masks and HSV skin masks onto a random sample
 of images to visually verify anatomical placement and HSV filtering accuracy.
+
+Panel 2 = geometric region polygons (7.3); panel 3 = only the skin pixels kept
+by the HSV filter (7.4). Label maps are read by exact manifest filename.
 
 Outputs:
     results/qa_visualizations/sample_<filename>.jpg
@@ -105,16 +108,18 @@ def generate_qa_overlay(filename: str):
             patch = patches[region]
             
             if patch.image is not None:
-                # Derive valid mask from active non-zero RGB pixels in patch
-                mask = patch.image.sum(axis=2) > 0
+                # Panel 2: the region's geometric polygon (Phase 7.3).
+                geom = patch.geometric_mask
+                # Panel 3: only the pixels that SURVIVED the HSV filter
+                # (Phase 7.4). patch.image holds the whole polygon, so the
+                # skin mask must be used here to show what HSV removed.
+                skin = patch.skin_mask if patch.skin_mask is not None else geom
 
-                if mask.any():
+                if geom.any():
                     color = REGION_COLORS.get(region, (255, 255, 255))
-                    color_mask[mask] = color
-
-                    # Extract filtered skin pixels in BGR
-                    patch_bgr = cv2.cvtColor(patch.image, cv2.COLOR_RGB2BGR)
-                    panel3_filtered[mask] = patch_bgr[mask]
+                    color_mask[geom] = color
+                if skin.any():
+                    panel3_filtered[skin] = ssr_bgr[skin]
 
     # Blend panel 2 (40% color mask overlay)
     cv2.addWeighted(color_mask, 0.4, panel2_overlay, 0.6, 0, panel2_overlay)
