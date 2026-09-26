@@ -45,6 +45,20 @@ c. Hues just below 0 deg (pink: a* > 0, b* < 0) are Cool. The manuscript
    signed angle from atan2 (-180 to 180); the REPORTED hue stays 0-360.
    For every hue from 0 to 180 deg the two are identical.
 
+-------------------------------------------------------------------------------
+PROPOSED (not in the manuscript yet) -- chroma floor, OFF by default
+-------------------------------------------------------------------------------
+d. Chroma C*ab = sqrt(a*^2 + b*^2). Near C* = 0 the colour is almost grey and
+   its hue angle is unstable: a just-noticeable colour change (CIELAB
+   dE ~ 2.3) turns the hue by about atan(2.3 / C*). Requiring that such a
+   change cannot cross the whole 10 deg Neutral band gives
+   2.3 / C* <= tan(10 deg)  ->  C* >= 13 (PROPOSED_CHROMA_FLOOR).
+   With chroma_floor set, a region below it is "Indeterminate": it is still
+   reported, but does not vote. If no region reaches the floor, the Majority
+   Undertone Label is "Indeterminate". chroma_floor=None (the default) is the
+   manuscript rule exactly. Adopt it only after the team/adviser agree, and
+   then add it to Chapter 3 (Stage 6 and Label Generation).
+
 Usage (run from ml_pipeline/):
     python -m src.hueview.undertone --smoke
 """
@@ -62,11 +76,23 @@ from .regions import REGION_ORDER
 WARM = "Warm"
 NEUTRAL = "Neutral"
 COOL = "Cool"
+INDETERMINATE = "Indeterminate"      # only produced when a chroma floor is set
 UNDERTONES = (WARM, NEUTRAL, COOL)
 
 REFERENCE_ANGLE_DEG = 60.0
 WARM_THRESHOLD_DEG = 65.0
 COOL_THRESHOLD_DEG = 55.0
+
+# Dataset-relative centre (being tried, not in the manuscript yet): the median
+# hue of all measured regions in the TRAIN split, SSR sigma = 30, from
+# phase9_threshold_preview.py (phase9_threshold_centres.csv, rule "global").
+# Recompute it if SSR, masks or the dataset change.
+STW_TRAIN_CENTRE_DEG = 42.4
+HALF_BAND_DEG = WARM_THRESHOLD_DEG - REFERENCE_ANGLE_DEG                      # 5
+
+JND_DELTA_E = 2.3                    # just-noticeable difference in CIELAB
+NEUTRAL_BAND_DEG = WARM_THRESHOLD_DEG - COOL_THRESHOLD_DEG          # 10 deg
+PROPOSED_CHROMA_FLOOR = JND_DELTA_E / np.tan(np.radians(NEUTRAL_BAND_DEG))  # ~13.04
 
 
 # ---------------------------------------------------------------------------
@@ -82,12 +108,19 @@ def hue_angle_deg(a: float, b: float) -> float:
     return float(signed_hue_deg(a, b) % 360.0)
 
 
+def chroma(a: float, b: float) -> float:
+    """C*ab = sqrt(a*^2 + b*^2) -- distance from grey in the a*b* plane."""
+    return float(np.hypot(a, b))
+
+
 # ---------------------------------------------------------------------------
 # Step 2 -- per-region descriptor
 # ---------------------------------------------------------------------------
-def classify_undertone(hue_deg: float) -> str:
+def classify_undertone(hue_deg: float, center: float = REFERENCE_ANGLE_DEG,
+                       half_band: float = WARM_THRESHOLD_DEG - REFERENCE_ANGLE_DEG) -> str:
     """
-    Warm > 65 deg, Cool < 55 deg, Neutral 55-65 deg (inclusive).
+    Warm > center + half_band, Cool < center - half_band, Neutral in between
+    (inclusive). Defaults = manuscript: Warm > 65, Cool < 55, Neutral 55-65.
 
     Accepts either the 0-360 reported hue or the signed hue; values above
     180 deg are read as their signed equivalent (e.g. 350 -> -10, pink,
@@ -96,9 +129,9 @@ def classify_undertone(hue_deg: float) -> str:
     if not np.isfinite(hue_deg):
         raise ValueError("Hue angle is NaN/inf -- the region has no measured colour.")
     h = hue_deg - 360.0 if hue_deg > 180.0 else hue_deg
-    if h > WARM_THRESHOLD_DEG:
+    if h > center + half_band:
         return WARM
-    if h < COOL_THRESHOLD_DEG:
+    if h < center - half_band:
         return COOL
     return NEUTRAL
 
@@ -106,12 +139,15 @@ def classify_undertone(hue_deg: float) -> str:
 # ---------------------------------------------------------------------------
 # Step 3 -- majority vote with the manuscript's tie-break
 # ---------------------------------------------------------------------------
-def _distance_to_reference(hue_deg: float) -> float:
+def _distance_to_reference(hue_deg: float, center: float = REFERENCE_ANGLE_DEG) -> float:
     h = hue_deg - 360.0 if hue_deg > 180.0 else hue_deg
-    return abs(h - REFERENCE_ANGLE_DEG)
+    return abs(h - center)
 
 
-def majority_undertone(per_region_hues: Dict[str, float]) -> Tuple[str, bool]:
+def majority_undertone(per_region_hues: Dict[str, float],
+                       center: float = REFERENCE_ANGLE_DEG,
+                       half_band: float = WARM_THRESHOLD_DEG - REFERENCE_ANGLE_DEG
+                       ) -> Tuple[str, bool]:
     """
     Majority vote over the regions' descriptors -> (label, was_tied).
 
@@ -121,7 +157,7 @@ def majority_undertone(per_region_hues: Dict[str, float]) -> Tuple[str, bool]:
     """
     if not per_region_hues:
         raise ValueError("No measured regions to vote with.")
-    labels = {r: classify_undertone(h) for r, h in per_region_hues.items()}
+    labels = {r: classify_undertone(h, center, half_band) for r, h in per_region_hues.items()}
     counts = Counter(labels.values())
     top = max(counts.values())
     leaders = {lab for lab, c in counts.items() if c == top}
@@ -131,22 +167,50 @@ def majority_undertone(per_region_hues: Dict[str, float]) -> Tuple[str, bool]:
     order = {r: i for i, r in enumerate(REGION_ORDER)}
     candidates = [r for r in per_region_hues if labels[r] in leaders]
     winner = min(candidates,
-                 key=lambda r: (_distance_to_reference(per_region_hues[r]),
+                 key=lambda r: (_distance_to_reference(per_region_hues[r], center),
                                 order.get(r, len(order))))
     return labels[winner], True
+
+
+def majority_with_chroma_floor(regions: Dict[str, dict],
+                               chroma_floor: Optional[float],
+                               center: float = REFERENCE_ANGLE_DEG,
+                               half_band: float = HALF_BAND_DEG) -> Tuple[str, bool, int]:
+    """
+    Majority vote over `regions` ({name: {"hue_deg", "chroma", ...}}), using
+    only regions with chroma >= chroma_floor -> (label, was_tied, n_voted).
+    chroma_floor=None -> every region votes (manuscript rule). No region
+    reaching the floor -> (INDETERMINATE, False, 0).
+    """
+    voting = {r: v["hue_deg"] for r, v in regions.items()
+              if chroma_floor is None or v["chroma"] >= chroma_floor}
+    if not voting:
+        return INDETERMINATE, False, 0
+    label, tied = majority_undertone(voting, center, half_band)
+    return label, tied, len(voting)
 
 
 # ---------------------------------------------------------------------------
 # Full descriptor for one configuration
 # ---------------------------------------------------------------------------
 def compute_undertone_descriptor(cfg: ConfigurationOutput,
-                                 cielab_vector: Optional[np.ndarray]) -> Optional[dict]:
+                                 cielab_vector: Optional[np.ndarray],
+                                 chroma_floor: Optional[float] = None,
+                                 center: float = REFERENCE_ANGLE_DEG,
+                                 half_band: float = HALF_BAND_DEG) -> Optional[dict]:
     """
     Undertone descriptor for one ConfigurationOutput, from Phase 8.2's vector.
 
     single region (3 values) : that region's hue + descriptor
     full_face     (15 values): per-region hues + descriptors of the MEASURED
                                regions, and their Majority Undertone Label
+
+    chroma_floor: None = manuscript rule. A number (e.g. PROPOSED_CHROMA_FLOOR)
+    marks regions below it Indeterminate and leaves them out of the vote --
+    decision (d).
+
+    center / half_band: hue thresholds (default = manuscript 60 +/- 5).
+    Pass center=STW_TRAIN_CENTRE_DEG for the dataset-relative rule.
 
     Returns None when nothing was measured (cielab_vector is None, or every
     component region was imputed). Never scored against ground truth.
@@ -164,19 +228,27 @@ def compute_undertone_descriptor(cfg: ConfigurationOutput,
     for name, (L, a, b) in zip(order, cielab_vector.reshape(len(order), 3)):
         if name in imputed or not np.isfinite([a, b]).all():
             continue                                    # decision (b)
-        hue = hue_angle_deg(a, b)
+        hue, c = hue_angle_deg(a, b), chroma(a, b)
+        low = chroma_floor is not None and c < chroma_floor
         regions[name] = {"L": float(L), "a": float(a), "b": float(b),
-                         "hue_deg": hue, "undertone": classify_undertone(hue)}
+                         "chroma": c, "hue_deg": hue,
+                         "undertone": INDETERMINATE if low
+                         else classify_undertone(hue, center, half_band)}
     if not regions:
         return None
 
-    label, tied = majority_undertone({r: v["hue_deg"] for r, v in regions.items()})
+    label, tied, n_voted = majority_with_chroma_floor(regions, chroma_floor,
+                                                      center, half_band)
     return {
         "config": cfg.config,
+        "center_deg": center,
+        "half_band_deg": half_band,
+        "chroma_floor": chroma_floor,
         "regions": regions,
         "majority_undertone": label,
         "was_tied": tied,
-        "n_regions_voted": len(regions),
+        "n_regions_measured": len(regions),
+        "n_regions_voted": n_voted,
         "excluded_regions": [r for r in order if r not in regions],
     }
 
@@ -311,6 +383,45 @@ def _smoke() -> int:
         outs2[FULL_FACE], build_cielab_vector(outs2[FULL_FACE], impute_policy=IMPUTE_NAN))
     check("NaN-imputed regions are skipped too", d3["n_regions_voted"] == 3)
     check("nothing measured -> None", compute_undertone_descriptor(outs2[FULL_FACE], None) is None)
+
+    print("\n== (d) proposed chroma floor, off by default ==")
+    check("proposed floor = 2.3 / tan(10 deg) ~ 13.04",
+          np.isclose(PROPOSED_CHROMA_FLOOR, 13.04, atol=0.01))
+    check("chroma(3, 4) = 5", np.isclose(chroma(3, 4), 5))
+    check("default (no floor) = manuscript rule, all 5 vote",
+          d["chroma_floor"] is None and d["n_regions_voted"] == 5)
+    fake = {"forehead": {"hue_deg": 40, "chroma": 6},    # faint -> Indeterminate
+            "left_cheek": {"hue_deg": 45, "chroma": 8},  # faint -> Indeterminate
+            "right_cheek": {"hue_deg": 70, "chroma": 18},
+            "nose_bridge": {"hue_deg": 72, "chroma": 20},
+            "jawline": {"hue_deg": 50, "chroma": 15}}
+    check("no floor: 3 Cool / 2 Warm -> Cool",
+          majority_with_chroma_floor(fake, None) == (COOL, False, 5))
+    check("floor 13: faint regions drop out -> Warm (2 of 3 voting)",
+          majority_with_chroma_floor(fake, 13) == (WARM, False, 3))
+    check("floor above every region -> Indeterminate, 0 voted",
+          majority_with_chroma_floor(fake, 99) == (INDETERMINATE, False, 0))
+    d4 = compute_undertone_descriptor(outs[FULL_FACE], build_cielab_vector(outs[FULL_FACE]),
+                                      chroma_floor=99)
+    check("descriptor with floor 99 -> Indeterminate, regions still reported",
+          d4["majority_undertone"] == INDETERMINATE and d4["n_regions_measured"] == 5
+          and all(v["undertone"] == INDETERMINATE for v in d4["regions"].values()))
+    d5 = compute_undertone_descriptor(outs[FULL_FACE], build_cielab_vector(outs[FULL_FACE]),
+                                      chroma_floor=13)
+    check("custom threshold: centre 45 +/- 5 -> 52 Warm, 45 Neutral, 38 Cool",
+          [classify_undertone(h, 45, 5) for h in (52, 45, 38)] == [WARM, NEUTRAL, COOL])
+    check("custom threshold: tie-break uses the new centre",
+          majority_undertone({"forehead": 52, "jawline": 39}, center=45, half_band=5)
+          == (COOL, True))
+    d6 = compute_undertone_descriptor(outs[FULL_FACE], build_cielab_vector(outs[FULL_FACE]),
+                                      center=STW_TRAIN_CENTRE_DEG)
+    got6 = {r: v["undertone"] for r, v in d6["regions"].items()}
+    want6 = {r: classify_undertone(h, STW_TRAIN_CENTRE_DEG, 5) for r, h in hues.items()}
+    check("descriptor with centre 42.4: 45 deg -> Neutral, 58 deg -> Warm",
+          got6 == want6 and got6["right_cheek"] == NEUTRAL and got6["nose_bridge"] == WARM,
+          str(got6))
+    check("floor 13 on C*=20 test colours changes nothing",
+          d5["majority_undertone"] == d["majority_undertone"] and d5["n_regions_voted"] == 5)
 
     print("\n== step 4: stored separately, one row per image ==")
     row = undertone_record("img2", d2)

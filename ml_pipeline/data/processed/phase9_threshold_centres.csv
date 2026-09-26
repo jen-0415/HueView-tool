@@ -1,0 +1,9 @@
+rule,scc_label,centre_deg,warm_above,cool_below
+manuscript,ALL,60.0,65.0,55.0
+global,ALL,42.4,47.4,37.4
+per_scc,SCC-1,43.3,48.3,38.3
+per_scc,SCC-2,59.7,64.7,54.7
+per_scc,SCC-3,49.7,54.7,44.7
+per_scc,SCC-4,42.1,47.1,37.1
+per_scc,SCC-5,37.4,42.4,32.4
+per_scc,SCC-6,35.4,40.4,30.4

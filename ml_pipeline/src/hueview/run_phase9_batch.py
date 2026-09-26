@@ -34,11 +34,28 @@ Input:
     data/processed/images_ssr/<filename>               -- from 7.2 (sigma = 30)
     (original pre-SSR crop via path_resolver -- diagnostic mode only)
 
+HUE THRESHOLD (being tried, not in the manuscript yet):
+    `majority_undertone` uses the DATASET-RELATIVE centre: the train-split
+    median region hue, STW_TRAIN_CENTRE_DEG = 42.4 deg (undertone.py, from
+    phase9_threshold_preview.py), with the researchers' +/- 5 deg band:
+        Warm > 47.4,  Neutral 37.4-47.4,  Cool < 37.4
+    The manuscript rule (60 +/- 5, Pantone / Sirisayan) is kept alongside as
+    `majority_undertone_60` for Appendix 5.
+
+CHROMA FLOOR COMPARISON (proposed, not in the manuscript yet): Alongside it, the same images are re-voted with
+    each floor in CHROMA_FLOORS: regions with C*ab below the floor are
+    "Indeterminate" and do not vote (undertone.py, decision (d)). Nothing is
+    changed in the reported result until the team/adviser pick a floor.
+
 Output:
     data/processed/phase9_undertone.csv -- one row per image:
-        filename, <region>_hue_deg, <region>_undertone (x5),
-        majority_undertone, was_tied, n_regions_present
+        filename, split, scc_label,
+        <region>_L, _a, _b, _chroma, _hue_deg, _undertone (x5, 42.4 deg rule),
+        majority_undertone, was_tied, n_regions_present   (42.4 deg rule)
+        majority_undertone_60, was_tied_60                (manuscript 60 deg rule)
+        majority_undertone_c<F>, n_regions_voted_c<F>     (42.4 deg + chroma floor F)
         (n_regions_present = regions that were actually measured and voted)
+    data/processed/phase9_chroma_floor_comparison.csv -- label % per SCC per rule
     data/processed/phase9_failures.csv  -- filename, reason (only if any)
     Diagnostic mode writes phase9_undertone_original_diagnostic.csv /
     phase9_failures_original_diagnostic.csv instead.
@@ -82,7 +99,9 @@ from ml_pipeline.src.baseline.path_resolver import resolve_image_path  # noqa: E
 from ml_pipeline.src.hueview.regions import decode_label_map, REGION_ORDER  # noqa: E402
 from ml_pipeline.src.hueview.region_selector import RegionalConfigurationSelector, FULL_FACE  # noqa: E402
 from ml_pipeline.src.hueview.cielab_features import build_cielab_vector  # noqa: E402
-from ml_pipeline.src.hueview.undertone import compute_undertone_descriptor  # noqa: E402
+from ml_pipeline.src.hueview.undertone import (  # noqa: E402
+    HALF_BAND_DEG, INDETERMINATE, PROPOSED_CHROMA_FLOOR, REFERENCE_ANGLE_DEG,
+    STW_TRAIN_CENTRE_DEG, compute_undertone_descriptor, majority_with_chroma_floor)
 
 # ---------------------------------------------------------------- config --
 
@@ -91,6 +110,17 @@ LABEL_MAPS_ROOT = PROJECT_ROOT / "data" / "processed" / "label_maps"
 SSR_ROOT = PROJECT_ROOT / "data" / "processed" / "images_ssr"
 OUT_PATH = PROJECT_ROOT / "data" / "processed" / "phase9_undertone.csv"
 FAILURES_PATH = PROJECT_ROOT / "data" / "processed" / "phase9_failures.csv"
+COMPARISON_PATH = PROJECT_ROOT / "data" / "processed" / "phase9_chroma_floor_comparison.csv"
+SPLITS = ("train", "val", "test")
+
+# Hue thresholds: dataset-relative centre (reported) and manuscript 60 deg (comparison)
+HUE_CENTRE_DEG = STW_TRAIN_CENTRE_DEG      # 42.4
+HALF_BAND = HALF_BAND_DEG                  # 5
+CENTRES_PATH = PROJECT_ROOT / "data" / "processed" / "phase9_threshold_centres.csv"
+
+# Chroma floors to compare (C*ab). 13 = proposed (2.3 JND / tan 10 deg).
+CHROMA_FLOORS = (10, round(PROPOSED_CHROMA_FLOOR), 20)
+LABEL_ORDER = ("Cool", "Neutral", "Warm", INDETERMINATE)
 
 LIMIT = None  # e.g. 50 to sanity-check before the full run
 
@@ -103,6 +133,7 @@ if CIELAB_SOURCE not in ("ssr", "original"):
 if CIELAB_SOURCE == "original":
     OUT_PATH = OUT_PATH.with_name("phase9_undertone_original_diagnostic.csv")
     FAILURES_PATH = FAILURES_PATH.with_name("phase9_failures_original_diagnostic.csv")
+    COMPARISON_PATH = COMPARISON_PATH.with_name("phase9_chroma_floor_comparison_original_diagnostic.csv")
 
 # --------------------------------------------------------------- worker --
 
@@ -137,19 +168,33 @@ def process_one(filename: str):
 
     cfg = outputs[0]
     cielab_vec = build_cielab_vector(cfg, original_rgb=orig_rgb)
-    result = compute_undertone_descriptor(cfg, cielab_vec)
+    result = compute_undertone_descriptor(cfg, cielab_vec,
+                                          center=HUE_CENTRE_DEG, half_band=HALF_BAND)
     if result is None:
         # No region had usable skin pixels -- nothing was measured.
         return (filename, None, "no_measured_regions")
 
     row = {"filename": filename}
     for name in REGION_ORDER:
-        region_info = result["regions"].get(name)
-        row[f"{name}_hue_deg"] = round(region_info["hue_deg"], 2) if region_info else None
-        row[f"{name}_undertone"] = region_info["undertone"] if region_info else None
+        info = result["regions"].get(name)
+        for key in ("L", "a", "b", "chroma", "hue_deg"):
+            row[f"{name}_{key}"] = round(info[key], 2) if info else None
+        row[f"{name}_undertone"] = info["undertone"] if info else None
+    # Dataset-relative rule (reported result)
     row["majority_undertone"] = result["majority_undertone"]
     row["was_tied"] = result["was_tied"]
     row["n_regions_present"] = result["n_regions_voted"]  # measured regions only
+    # Manuscript 60 deg rule (comparison, Appendix 5)
+    label60, tied60, _ = majority_with_chroma_floor(result["regions"], None,
+                                                    REFERENCE_ANGLE_DEG, HALF_BAND)
+    row["majority_undertone_60"] = label60
+    row["was_tied_60"] = tied60
+    # Proposed chroma floors on top of the dataset-relative rule (comparison only)
+    for floor in CHROMA_FLOORS:
+        label, _, n_voted = majority_with_chroma_floor(result["regions"], floor,
+                                                       HUE_CENTRE_DEG, HALF_BAND)
+        row[f"majority_undertone_c{floor}"] = label
+        row[f"n_regions_voted_c{floor}"] = n_voted
 
     return (filename, row, None)
 
@@ -157,8 +202,82 @@ def process_one(filename: str):
 # --------------------------------------------------------------- main --
 
 
+def load_scc_labels() -> pd.DataFrame:
+    """filename -> split, scc_label from train/val/test.csv (for the report only)."""
+    frames = []
+    for split in SPLITS:
+        path = PROJECT_ROOT / "data" / "processed" / f"{split}.csv"
+        if not path.is_file():
+            print(f"  (no {path.name} -- SCC breakdown will skip it)")
+            continue
+        df = pd.read_csv(path)
+        col = next((c for c in df.columns if c.lower() in ("scc_label", "scc")), None)
+        if col is None:
+            continue
+        frames.append(pd.DataFrame({"filename": df["filename"].astype(str),
+                                    "split": split, "scc_label": df[col].astype(str)}))
+    if not frames:
+        return pd.DataFrame(columns=["filename", "split", "scc_label"])
+    return pd.concat(frames).drop_duplicates("filename")
+
+
+def pct_table(df: pd.DataFrame, col: str) -> pd.DataFrame:
+    """% of each label per SCC (rows) + an ALL row."""
+    t = pd.crosstab(df["scc_label"], df[col], normalize="index") * 100
+    t.loc["ALL"] = df[col].value_counts(normalize=True) * 100
+    return t.reindex(columns=[c for c in LABEL_ORDER if c in t.columns]).fillna(0).round(1)
+
+
+def print_comparison(df: pd.DataFrame):
+    chroma_cols = [f"{r}_chroma" for r in REGION_ORDER]
+    print("\nREGION CHROMA C*ab (measured regions)")
+    print("-" * 60)
+    by_scc = df.groupby("scc_label")[chroma_cols].median()
+    by_scc.columns = [r for r in REGION_ORDER]
+    print("median per SCC:")
+    print(by_scc.round(1).to_string())
+
+    all_c = df[chroma_cols].stack()
+    print("\n% of measured regions BELOW each floor (all images):")
+    print("  " + "   ".join(f"C*<{f}: {100 * (all_c < f).mean():.1f}%" for f in CHROMA_FLOORS))
+
+    rows = []
+    rules = [(f"centre {HUE_CENTRE_DEG} (reported)", "majority_undertone"),
+             (f"manuscript {REFERENCE_ANGLE_DEG:g}", "majority_undertone_60")] + \
+            [(f"centre {HUE_CENTRE_DEG} + C*>={f}", f"majority_undertone_c{f}")
+             for f in CHROMA_FLOORS]
+    for name, col in rules:
+        t = pct_table(df, col)
+        print(f"\nMAJORITY UNDERTONE % BY SCC -- {name}")
+        print("-" * 60)
+        print(t.to_string())
+        long = t.reset_index().melt(id_vars="scc_label", var_name="undertone", value_name="percent")
+        long.insert(0, "rule", name)
+        rows.append(long)
+    pd.concat(rows).to_csv(COMPARISON_PATH, index=False)
+    print(f"\nSaved {COMPARISON_PATH}")
+
+
+
+def check_centre():
+    """Warn if the preview's train median no longer matches the constant used."""
+    if not CENTRES_PATH.is_file():
+        return
+    c = pd.read_csv(CENTRES_PATH)
+    g = c.loc[c["rule"] == "global", "centre_deg"]
+    if len(g) and abs(float(g.iloc[0]) - HUE_CENTRE_DEG) > 0.05:
+        print(f"WARNING: {CENTRES_PATH.name} says the train median is {float(g.iloc[0])} deg, "
+              f"but STW_TRAIN_CENTRE_DEG = {HUE_CENTRE_DEG}. Update undertone.py if the "
+              f"pipeline changed.")
+
+
 def run():
     print(f"Project root: {PROJECT_ROOT}")
+    print(f"Hue rule: Warm > {HUE_CENTRE_DEG + HALF_BAND:.1f}, "
+          f"Neutral {HUE_CENTRE_DEG - HALF_BAND:.1f}-{HUE_CENTRE_DEG + HALF_BAND:.1f}, "
+          f"Cool < {HUE_CENTRE_DEG - HALF_BAND:.1f}  (centre = train median; "
+          f"manuscript 60 deg kept as majority_undertone_60)")
+    check_centre()
     print(f"CIELAB source: {CIELAB_SOURCE}"
           + ("  (manuscript)" if CIELAB_SOURCE == "ssr" else "  (DIAGNOSTIC -- not the reported result)"))
 
@@ -186,6 +305,11 @@ def run():
                 rows.append(row)
 
     df = pd.DataFrame(rows)
+    if rows:
+        df = load_scc_labels().merge(df, on="filename", how="right")
+        front = ["filename", "split", "scc_label"]
+        df = df[front + [c for c in df.columns if c not in front]].sort_values("filename")
+        df["scc_label"] = df["scc_label"].fillna("unknown")
     df.to_csv(OUT_PATH, index=False)
 
     print(f"\nProcessed {len(rows)} / {len(filenames)} images successfully")
@@ -199,7 +323,7 @@ def run():
     print(f"Saved {OUT_PATH}")
 
     if rows:
-        print("\nMAJORITY UNDERTONE DISTRIBUTION")
+        print("\nMAJORITY UNDERTONE DISTRIBUTION (centre 42.4)")
         print("-" * 60)
         print(df["majority_undertone"].value_counts().to_string())
 
@@ -210,6 +334,8 @@ def run():
 
         incomplete = int((df["n_regions_present"] < 5).sum())
         print(f"\nImages with <5 measured regions: {incomplete} / {len(df)}")
+
+        print_comparison(df)
 
 
 if __name__ == "__main__":
