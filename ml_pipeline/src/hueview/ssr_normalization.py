@@ -1,28 +1,35 @@
 """
 SSR (Single-Scale Retinex) Illumination Normalization
 Phase 7, Stream B (parallel to 7.1) -- HueView
+Manuscript: Chapter 3, Stage 2 (SSR Illumination Normalization); Data
+Generation (Feature Selection).
 
-R(x,y) = log(I(x,y)) - log(F(x,y) * I(x,y)), F = Gaussian(sigma=80)
-Applied independently per channel, rescaled to 0-255. The SSR formula
-itself is UNCHANGED from the original.
+R(x,y) = log(I(x,y)) - log(F(x,y) * I(x,y)), F = Gaussian(sigma=30)
+Applied independently per channel ("SSR is applied independently to the Red,
+Green, and Blue channels", Data Generation), rescaled to 0-255. Runs on the
+full, unmasked 224x224 face, before any regional masking.
+
+SIGMA = 30 (was 80). sigma = 80 flattened the skin colour channels (a*/b*
+dropped from ~10-15 to ~2-5). The manuscript still says 80 in five places
+(Definition of Terms x2, Stage 2, Data Generation, Appendix 1) -- update them.
 
 Job list comes from landmarks_index.csv (Phase 7.1's output) rather than
 scanning a folder -- that file already contains exactly the images that
-successfully got landmarks, so there's no point re-deriving "which images
-have landmarks" here, and no point SSR-normalizing an image that has none
-to build regions from in 7.3.
+successfully got landmarks, so there's no point SSR-normalizing an image that
+has none to build regions from in 7.3.
 
-Each filename is resolved to its real file across the four batch folders
-(processed/, c1_processed/, c2_processed/, v5_processed/) via
-path_resolver.resolve_image_path -- the same resolver every other script
-uses -- instead of assuming a single flat data/processed/faces/ folder,
-which doesn't exist in this dataset layout.
+Input: data/processed/images/<filename> -- the MST-N folder rebuilt from
+resolved_manifest.csv (rebuild_images_from_manifest.py), where every manifest
+filename is the exact image the manifest means. Read by exact path, so the
+result no longer depends on which folder the script is run from.
 
-Output mirrors your MST-N/ structure under data/processed/faces_ssr/.
+Output mirrors the MST-N/ structure under data/processed/images_ssr/ -- the
+folder Phases 7.3 (segment_regions.py), 7.4 (run_phase7_4_batch.py),
+7.5 (run_phase7_5_batch.py) and 9 (run_phase9_batch.py) read.
 
-Paths are anchored to <project_root> (the folder containing "data/"), found
-by walking up from this file's own location -- works the same whether you
-run it from the project root, from src/hueview, or via an IDE "run" button.
+Paths are anchored to <project_root> (the folder containing "data/", i.e.
+ml_pipeline/), found by walking up from this file's own location -- works the
+same whether you run it from the repo root, from src/hueview, or via an IDE.
 """
 
 import sys
@@ -47,17 +54,13 @@ def find_project_root(start: Path, marker: str = "data") -> Path:
 
 PROJECT_ROOT = find_project_root(Path(__file__).resolve().parent)
 
-# path_resolver.py lives under src/baseline/ -- add src/ to the path so this
-# script can import it regardless of where it's run from.
-sys.path.insert(0, str(PROJECT_ROOT / "src"))
-from ml_pipeline.src.baseline.path_resolver import resolve_image_path  # noqa: E402
-
 # ---------------------------------------------------------------- config --
 
 LANDMARKS_INDEX_PATH = PROJECT_ROOT / "data" / "processed" / "landmarks_index.csv"
-OUTPUT_ROOT = PROJECT_ROOT / "data" / "processed" / "faces_ssr"
+IMAGES_ROOT = PROJECT_ROOT / "data" / "processed" / "images"
+OUTPUT_ROOT = PROJECT_ROOT / "data" / "processed" / "images_ssr"
 
-SIGMA = 80.0
+SIGMA = 30.0
 EPSILON = 1.0                      # avoids log(0); standard in Retinex implementations
 
 SAMPLE_SIZE = None                 # e.g. 20 to sanity-check output before the full run
@@ -66,8 +69,7 @@ SAMPLE_SIZE = None                 # e.g. 20 to sanity-check output before the f
 
 
 def apply_ssr(image: np.ndarray, sigma: float = SIGMA, epsilon: float = EPSILON) -> np.ndarray:
-    """Single-Scale Retinex, applied independently to each channel. Unchanged
-    from the original -- this formula was never the part that was broken."""
+    """Single-Scale Retinex, applied independently to each channel."""
     img = image.astype(np.float64) + epsilon
     out = np.empty_like(img)
 
@@ -106,37 +108,39 @@ def process_one(paths):
 
 def collect_jobs():
     """Job list = every image landmark_extraction.py successfully processed
-    (landmarks_index.csv already excludes failures -- no separate exclusion
-    list needed here). Each filename is resolved to its real file across
-    the 4 batch folders via path_resolver.resolve_image_path, so this reads
-    identical bytes to every other script instead of assuming a flat
-    faces/ folder.
+    (landmarks_index.csv already excludes failures). Each filename is read
+    from IMAGES_ROOT/<filename> by exact path.
 
     Returns (jobs, unresolved) where jobs is a list of (src_path, dst_path)
-    tuples and unresolved is a list of filenames path_resolver couldn't
-    find anywhere.
+    tuples and unresolved is a list of filenames with no file at that path.
     """
     if not LANDMARKS_INDEX_PATH.is_file():
         raise SystemExit(
             f"ERROR: {LANDMARKS_INDEX_PATH} not found -- run landmark_extraction.py (7.1) first."
         )
+    if not IMAGES_ROOT.is_dir():
+        raise SystemExit(f"ERROR: {IMAGES_ROOT} not found.")
 
     index_df = pd.read_csv(LANDMARKS_INDEX_PATH)
     jobs = []
     unresolved = []
 
     for filename in index_df["filename"]:
-        src_path, rule, root = resolve_image_path(filename)
-        if src_path is None:
-            unresolved.append(filename)
+        rel = str(filename).replace("\\", "/")
+        src_path = IMAGES_ROOT / rel
+        if not src_path.is_file():
+            unresolved.append(rel)
             continue
-        jobs.append((src_path, OUTPUT_ROOT / filename))
+        jobs.append((src_path, OUTPUT_ROOT / rel))
 
     return jobs, unresolved
 
 
 def main():
     print(f"Project root: {PROJECT_ROOT}")
+    print(f"SSR sigma = {SIGMA}  (per channel)")
+    print(f"Input : {IMAGES_ROOT}")
+    print(f"Output: {OUTPUT_ROOT}")
 
     all_jobs, unresolved = collect_jobs()
     print(f"{LANDMARKS_INDEX_PATH.name}: {len(all_jobs)} resolved, {len(unresolved)} unresolved")
