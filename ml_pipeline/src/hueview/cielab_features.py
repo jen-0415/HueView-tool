@@ -9,11 +9,25 @@ Manuscript: Chapter 3, Stage 5 (RGB -> CIELAB Conversion).
     facial region."
 
 Output per configuration (length = cfg.cielab_dim, set by region_selector 7.5):
-    single region : [L*, a*, b*]                       -> 3 values
+    single region : [L*, a*, b*]                           -> 3 values
     full_face     : 5 triples concatenated in REGION_ORDER -> 15 values
 
-Conversion: skimage.color.rgb2lab = standard sRGB -> linear RGB -> XYZ (D65)
--> CIELAB, in floating point (L* 0-100, a*/b* centred on 0). NOT
+How the manuscript uses them:
+  * CLASSIFICATION (Fused Classification & Output): "For each facial region,
+    the CNN feature vector is combined with the corresponding CIELAB feature
+    vector" -> each region's classifier gets that region's 3 values only.
+  * The 15 values are the same five triples compiled together ("these
+    individual outputs compile into a comprehensive CIELAB Feature Vector",
+    Stage 5 -- the "15 regional color features" of the Definition of Terms).
+    Stage 6 (undertone) reads them. They are NOT fed to a separate Full Face
+    classifier: Full Face combines the five regional predictions (Appendix 3,
+    hybrid_classifier.combine_region_predictions).
+
+Conversion: skimage.color.rgb2lab = standard sRGB -> linear RGB -> XYZ ->
+CIELAB with the D65 reference white and the 2-degree observer (the sRGB
+standard), in floating point (L* 0-100, a*/b* centred on 0). The manuscript
+says "standard matrix conversion" without naming a white point -- add
+"D65" to Stage 5. NOT
 cv2.cvtColor(COLOR_RGB2LAB): OpenCV's 8-bit Lab is rescaled to 0-255 with
 a*/b* shifted by +128, which is a display encoding and would corrupt Phase 9's
 hue angle atan2(b*, a*).
@@ -31,6 +45,8 @@ CHANGES FROM THE PREVIOUS VERSION
     ConfigurationOutput (cfg.meta["impute_policy"]), so the policy chosen in
     7.5 is the one actually applied.
   * Added a --smoke self-test with reference sRGB -> CIELAB values.
+  * D65 / 2-degree observer passed explicitly (same values as before -- they
+    are skimage's defaults -- but now visible and citable).
 
 Function names are unchanged (region_cielab_mean, build_cielab_vector).
 
@@ -93,7 +109,8 @@ def region_cielab_mean(
 
     rgb_float = pixels.astype(np.float64) / 255.0
     # rgb2lab expects an image; (N, 1, 3) treats each pixel as a 1x1 image.
-    lab = rgb2lab(rgb_float.reshape(-1, 1, 3)).reshape(-1, 3)
+    lab = rgb2lab(rgb_float.reshape(-1, 1, 3),
+                  illuminant="D65", observer="2").reshape(-1, 3)
     return lab.mean(axis=0)
 
 
@@ -240,11 +257,10 @@ def _smoke() -> int:
     check("full_face = the 5 regional triples in REGION_ORDER",
           np.allclose(vecs[FULL_FACE],
                       np.concatenate([vecs[r] for r in REGION_ORDER])))
-    fused = {c: assert_feature_shapes(o, np.zeros(1280), vecs[c])
-             for c, o in outs.items()}
-    check("7.5 shape checkpoint: 1283 per region, 1295 full_face",
-          all(fused[r] == 1283 for r in REGION_ORDER) and fused[FULL_FACE] == 1295,
-          str(fused))
+    fused = {r: assert_feature_shapes(outs[r], np.zeros(1280), vecs[r])
+             for r in REGION_ORDER}
+    check("Phase 8 checkpoint: every region fuses to 1280 + 3 = 1283",
+          all(v == 1283 for v in fused.values()), str(fused))
 
     print("\n== missing regions ==")
     patches_miss = dict(patches)
