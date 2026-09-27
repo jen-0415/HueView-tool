@@ -35,15 +35,14 @@ from tensorflow.keras import layers
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 PATCH_DIR = ROOT / "data/processed/regions"    # JPG patches from Phase 7.4
-SPLIT_DIR = ROOT / "data/processed"            # train.csv / val.csv / test.csv
-FACE_DIR = SPLIT_DIR / "images/processed"      # 224×224 full faces
+SPLIT_DIR = ROOT / "data/processed"            # train_verified.csv / val_verified.csv
+FACE_DIR = SPLIT_DIR / "images_ssr"            # SSR images (full faces)
 MODEL_DIR = ROOT / "models"
 RESULT_DIR = ROOT / "results"
-CONFIG_DIR = ROOT / "config"
+CONFIG_DIR = ROOT / "configs"
 
 REGIONS = ["forehead", "left_cheek", "right_cheek",
            "jawline", "nose_bridge", "full_face"]
-FACE_SOURCE_DIRS = ["processed", "c1_processed", "c2_processed", "v5_processed"]
 
 FNAME_COL = "filename"
 LABEL_COL = "SCC_label"
@@ -52,7 +51,7 @@ N_CLASSES = 6
 
 
 def patch_paths(region: str, fname: str):
-    """Phase 7.4 saved JPGs at: regions/MST-X/<filename>_<region>.jpg"""
+    """Phase 7.4 saved JPGs at: regions/MST-X/<stem>_<region>.jpg"""
     parts = pathlib.Path(fname)
     folder = parts.parent.name
     stem = parts.stem
@@ -77,9 +76,9 @@ def patch_paths(region: str, fname: str):
 def load_patch(region: str, fname: str):
     """Load regional JPG, return (uint8 RGB 224×224, bool mask)."""
     if region == "full_face":
-        # full_face uses the Phase 3 full faces, not a regional patch
+        # full_face uses the SSR full face images
         return load_face(fname), None
-    
+
     p_img, _ = patch_paths(region, fname)
     bgr = cv2.imread(str(p_img))
     if bgr is None:
@@ -93,19 +92,19 @@ def load_patch(region: str, fname: str):
 
 
 def load_face(fname: str) -> np.ndarray:
-    """Load full 224×224 face. Faces are split across four source folders."""
-    stem = pathlib.Path(fname).stem
-    folder = pathlib.Path(fname).parent.name
-    for src in FACE_SOURCE_DIRS:
-        for ext in (".jpg", ".png"):
-            p = SPLIT_DIR / "images" / src / folder / f"{stem}{ext}"
-            if p.exists():
-                bgr = cv2.imread(str(p))
-                img = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-                if img.shape[:2] != (IMG_SIZE, IMG_SIZE):
-                    img = cv2.resize(img, (IMG_SIZE, IMG_SIZE), interpolation=cv2.INTER_AREA)
-                return img.astype(np.uint8)
-    raise FileNotFoundError(f"face not found: {stem}")
+    """Load SSR full face from images_ssr/MST-X/<stem>.jpg"""
+    p0 = pathlib.Path(fname)
+    folder = p0.parent.name
+    stem = p0.stem
+    for ext in (".jpg", ".png"):
+        p = FACE_DIR / folder / f"{stem}{ext}"
+        if p.exists():
+            bgr = cv2.imread(str(p))
+            img = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+            if img.shape[:2] != (IMG_SIZE, IMG_SIZE):
+                img = cv2.resize(img, (IMG_SIZE, IMG_SIZE), interpolation=cv2.INTER_AREA)
+            return img.astype(np.uint8)
+    raise FileNotFoundError(f"face not found: {fname} in {FACE_DIR}")
 
 # -------------------------- END ADAPTER ----------------------------------
 

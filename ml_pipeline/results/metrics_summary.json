@@ -2,17 +2,17 @@
   {
     "model": "Baseline",
     "n": 2994,
-    "accuracy": 0.6189044756179025,
-    "precision_macro": 0.6709684004007327,
-    "recall_macro": 0.5333265027655734,
-    "f1_macro": 0.5299094992231504
+    "accuracy": 0.6185704742818972,
+    "precision_macro": 0.6578272252587842,
+    "recall_macro": 0.5332810842051393,
+    "f1_macro": 0.529721211225568
   },
   {
     "model": "HueView (full_face)",
     "n": 2994,
-    "accuracy": 0.5607882431529726,
-    "precision_macro": 0.4925249958751628,
-    "recall_macro": 0.49733465905884416,
-    "f1_macro": 0.49093293402603305
+    "accuracy": 0.581496325985304,
+    "precision_macro": 0.5211862807894001,
+    "recall_macro": 0.5262437154197067,
+    "f1_macro": 0.5199190166949325
   }
 ]

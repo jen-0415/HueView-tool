@@ -14,14 +14,24 @@ ONE pass, then writes:
 
 Phase 12 should read ONLY the per-image record and never re-run a model.
 
-    python evaluate_phase11.py
-    python evaluate_phase11.py --primary full_face
+    python evaluate.py
+    python evaluate.py --primary full_face
+
+Aligned with train.py (sigma=30 SSR run):
+  * HueView inputs come from train.load_patch -> regions/ patches and
+    images_ssr/ full faces (the same pipeline the models were trained on).
+  * Baseline still reads the ORIGINAL (non-SSR) faces, because that is what
+    Phase 6 trained it on. Do not point it at images_ssr/.
+  * Test LAB vectors are recomputed every run (old lab_cache_*_test.npy files
+    from the sigma=80 run are stale and are deleted first).
+  * Leak check uses the same *_verified.csv files train.py trained on.
 """
 from __future__ import annotations
 
 import argparse
 import json
 import pathlib
+import sys
 
 import cv2
 import joblib
@@ -31,34 +41,43 @@ from sklearn.metrics import (accuracy_score, confusion_matrix, f1_score,
                              precision_score, recall_score)
 from tensorflow import keras
 
-from ml_pipeline.src.hueview.train import (CONFIG_DIR, FNAME_COL, IMG_SIZE, LABEL_COL, MODEL_DIR,
-                    N_CLASSES, REGIONS, RESULT_DIR, SPLIT_DIR, cache_lab,
-                    cielab_mean, load_patch)
+# Import train.py whether this is run as a module or as a plain script
+try:
+    from ml_pipeline.src.hueview.train import (FNAME_COL, IMG_SIZE, LABEL_COL,
+                                               MODEL_DIR, N_CLASSES, REGIONS,
+                                               RESULT_DIR, SPLIT_DIR,
+                                               cielab_mean, load_patch)
+except ModuleNotFoundError:
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    from train import (FNAME_COL, IMG_SIZE, LABEL_COL, MODEL_DIR, N_CLASSES,
+                       REGIONS, RESULT_DIR, SPLIT_DIR, cielab_mean, load_patch)
 
 LABELS = list(range(1, N_CLASSES + 1))          # SCC-1 .. SCC-6
 BATCH = 32
 
 # ---------------------------- ADAPTER ------------------------------------
-FACE_DIR = SPLIT_DIR / "faces"       # Phase 3 output: 224x224 RGB cropped faces
-FACE_SOURCE_DIRS = ["processed", "c1_processed", "c2_processed", "v5_processed"]
+# Baseline only: original (non-SSR) faces, as used in Phase 6.
+BASELINE_FACE_DIRS = ["processed", "c1_processed", "c2_processed", "v5_processed"]
 BASELINE_H5 = MODEL_DIR / "baseline_effnet.h5"
 BASELINE_INPUTS = ("image", "rgb_features")     # rename if your Phase 6.2 inputs differ
+TEST_CSV = SPLIT_DIR / "test_verified.csv"
+TRAIN_CSV = SPLIT_DIR / "train_verified.csv"    # same files train.py used
+VAL_CSV = SPLIT_DIR / "val_verified.csv"
 
 
-def load_face(fname: str) -> np.ndarray:
-    """Load full 224×224 face across four source folders."""
+def load_baseline_face(fname: str) -> np.ndarray:
+    """Load the original (non-SSR) 224x224 face for the Baseline model."""
     stem = pathlib.Path(fname).stem
     folder = pathlib.Path(fname).parent.name
-    for src in FACE_SOURCE_DIRS:
-        for ext in (".jpg", ".png"):
-            p = SPLIT_DIR / "images" / src / folder / f"{stem}{ext}"
-            if p.exists():
-                bgr = cv2.imread(str(p))
-                img = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-                if img.shape[:2] != (IMG_SIZE, IMG_SIZE):
-                    img = cv2.resize(img, (IMG_SIZE, IMG_SIZE), interpolation=cv2.INTER_AREA)
-                return img.astype(np.uint8)
-    raise FileNotFoundError(f"face not found: {stem}")
+    for ext in (".jpg", ".png"):
+        p = SPLIT_DIR / "images" / folder / f"{stem}{ext}"
+        if p.exists():
+            bgr = cv2.imread(str(p))
+            img = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+            if img.shape[:2] != (IMG_SIZE, IMG_SIZE):
+                img = cv2.resize(img, (IMG_SIZE, IMG_SIZE), interpolation=cv2.INTER_AREA)
+            return img.astype(np.uint8)
+    raise FileNotFoundError(f"baseline face not found: {fname}")
 # -------------------------- END ADAPTER ----------------------------------
 
 
@@ -102,13 +121,39 @@ def majority_undertone(per_region: dict[str, tuple[str, float]]) -> str:
     return best
 
 
+# ------------------------------------------------------------- test LAB
+def clear_stale_test_cache():
+    """Test LAB caches from an earlier SSR setting would silently feed the
+    wrong colour features to the new models. Always rebuild them."""
+    for f in RESULT_DIR.glob("lab_cache_*_test.npy"):
+        f.unlink()
+        print(f"[lab] removed stale {f.name}")
+
+
+def test_lab(region: str, df: pd.DataFrame) -> np.ndarray:
+    """Same computation as train.cache_lab (mask-aware mean L*a*b*)."""
+    out = RESULT_DIR / f"lab_cache_{region}_test.npy"
+    if out.exists():
+        arr = np.load(out)
+        if len(arr) == len(df):
+            return arr
+    vecs = []
+    for fn in df[FNAME_COL]:
+        patch, mask = load_patch(region, fn)
+        vecs.append(cielab_mean(patch, mask))
+    arr = np.stack(vecs)
+    np.save(out, arr)
+    print(f"[lab] {region}/test: cached {len(arr)} vectors")
+    return arr
+
+
 # ------------------------------------------------------------- inference
 def predict_baseline(df: pd.DataFrame):
-    model = keras.models.load_model(BASELINE_H5)
+    model = keras.models.load_model(BASELINE_H5, compile=False)
     preds, tones = [], []
     for i in range(0, len(df), BATCH):
         chunk = df[FNAME_COL].iloc[i:i + BATCH].tolist()
-        imgs = np.stack([load_face(f) for f in chunk]).astype(np.float32)
+        imgs = np.stack([load_baseline_face(f) for f in chunk]).astype(np.float32)
         rgb = imgs.reshape(len(chunk), -1, 3).mean(axis=1) / 255.0
         p = model.predict({BASELINE_INPUTS[0]: imgs, BASELINE_INPUTS[1]: rgb}, verbose=0)
         preds.extend(p.argmax(1) + 1)
@@ -118,14 +163,15 @@ def predict_baseline(df: pd.DataFrame):
 
 def predict_hueview(df: pd.DataFrame, region: str):
     """Returns (SCC preds, per-image (undertone, hue_angle))."""
-    model = keras.models.load_model(MODEL_DIR / f"hueview_{region}.h5")
-    scaler = joblib.load(MODEL_DIR / f"lab_scaler_{region}.pkl")
-    lab_raw = cache_lab(region, df, "test")
+    model = keras.models.load_model(MODEL_DIR / f"hueview_{region}.h5", compile=False)
+    scaler = joblib.load(MODEL_DIR / f"lab_scaler_{region}.pkl")   # fit on TRAIN in train.py
+    lab_raw = test_lab(region, df)
     lab = scaler.transform(lab_raw).astype(np.float32)
 
     preds = []
     for i in range(0, len(df), BATCH):
         chunk = df[FNAME_COL].iloc[i:i + BATCH].tolist()
+        # load_patch: regions/ JPG patches, or images_ssr/ face for full_face
         imgs = np.stack([load_patch(region, f)[0] for f in chunk]).astype(np.float32)
         p = model.predict({"img": imgs, "lab": lab[i:i + BATCH]}, verbose=0)
         preds.extend(p.argmax(1) + 1)
@@ -171,19 +217,28 @@ def main():
     a = ap.parse_args()
 
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
-    test = pd.read_csv(SPLIT_DIR / "test_verified.csv").reset_index(drop=True)
+    test = pd.read_csv(TEST_CSV).reset_index(drop=True)
     n = len(test)
     print(f"test images: {n}")
 
-    # --- leak re-check (cheap, do it here too, not only in Phase 5)
-    for split in ("train", "val"):
-        other = set(pd.read_csv(SPLIT_DIR / f"{split}.csv")[FNAME_COL])
+    # --- every HueView model must exist before we start a long run
+    missing = [r for r in REGIONS
+               if not (MODEL_DIR / f"hueview_{r}.h5").exists()
+               or not (MODEL_DIR / f"lab_scaler_{r}.pkl").exists()]
+    assert not missing, f"missing HueView model/scaler for: {missing} — finish train.py first"
+
+    # --- leak re-check against the SAME splits train.py used
+    for path in (TRAIN_CSV, VAL_CSV):
+        other = set(pd.read_csv(path)[FNAME_COL])
         overlap = other & set(test[FNAME_COL])
-        assert not overlap, f"LEAK: {len(overlap)} test files also in {split}.csv"
+        assert not overlap, f"LEAK: {len(overlap)} test files also in {path.name}"
+
+    clear_stale_test_cache()
 
     rec = pd.DataFrame({
         FNAME_COL: test[FNAME_COL],
-        "SCC_ground_truth": test[LABEL_COL].str.extract(r'(\d+)', expand=False).astype(int),
+        "SCC_ground_truth": test[LABEL_COL].astype(str)
+                                           .str.extract(r'(\d+)', expand=False).astype(int),
         "illumination_label": test["illumination_label"],
     })
 
@@ -261,8 +316,8 @@ def main():
         save_confusion(y, rec[f"hv_{r}"].to_numpy(),
                        RESULT_DIR / f"confusion_hueview_{r}.csv")
 
-    json.dump(overall.to_dict("records"),
-              open(RESULT_DIR / "metrics_summary.json", "w"), indent=2)
+    with open(RESULT_DIR / "metrics_summary.json", "w") as fh:
+        json.dump(overall.to_dict("records"), fh, indent=2)
     print("\nPhase 11 complete. Phase 12 reads classification_results_record.csv only.")
 
 
