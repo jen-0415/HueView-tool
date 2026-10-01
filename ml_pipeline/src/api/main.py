@@ -2,7 +2,7 @@
 Phase 15 -- FastAPI entrypoint.
 
 Run from the project root:
-    uvicorn src.api.main:app --reload --port 8000
+    uvicorn src.api.main:app --port 8000
 
 Interactive docs at http://localhost:8000/docs -- easiest way to test every
 endpoint without writing curl commands.
@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .routes import router
+from ..inference.models import load_models, models_loaded
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -27,9 +28,16 @@ log = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Per 14.2 / 15.1: load models ONCE at startup, never per request.
-    # When Phase 14 is ready, call load_models() here and stash the result
-    # somewhere inference.py can reach.
-    log.info("Starting HueView API (placeholder mode -- no real weights loaded yet)")
+    load_models()
+    status = models_loaded()
+    if status["baseline"]:
+        log.info("Baseline model loaded and ready.")
+    else:
+        log.warning("Baseline weights missing -- /api/analyze will return placeholder SCC for baseline.")
+    if status["hueview"]:
+        log.info("HueView model loaded and ready.")
+    else:
+        log.info("HueView weights not yet available -- staying in placeholder mode (expected).")
     yield
     log.info("Shutting down HueView API")
 
