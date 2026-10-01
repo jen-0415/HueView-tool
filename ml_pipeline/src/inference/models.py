@@ -1,12 +1,10 @@
 """
 Phase 14.2 -- Model loading (once, at startup)
 ================================================
-Loads the Baseline and HueView CNN models a single time. Baseline weights
-exist now (Stage 2, 2026-09-06 run -- val_loss 0.938, val_accuracy 62.44%,
-beat Stage 1's 0.9713/59.94%, so no fallback checkpoint needed). HueView
-weights don't exist yet, so it stays in placeholder mode until Phase 10/8.1
-finishes -- run_hueview() already handles model=None the same way
-run_baseline() did before this file was wired up.
+Baseline: final weights (manuscript-compliant).
+HueView: PROVISIONAL per-region weights -- trained geometric-mask-only, NOT the
+manuscript HSV-filtered way. FOR DEMO ONLY. Will be replaced with final weights 
+after manuscript retrain.
 """
 
 from __future__ import annotations
@@ -20,7 +18,9 @@ from .paths import MODELS_DIR
 logger = logging.getLogger(__name__)
 
 BASELINE_WEIGHTS_FILENAME = "baseline_effnet.keras"
-HUEVIEW_WEIGHTS_FILENAME = "hueview_effnet.keras"
+
+HUEVIEW_REGIONS = ["forehead", "left_cheek", "right_cheek", "nose_bridge", "jawline", "full_face"]
+HUEVIEW_SUFFIX = "_final_candidate"   # <-- swap to "" after manuscript retrain
 
 _models = {"baseline": None, "hueview": None}
 _loaded = False
@@ -35,33 +35,42 @@ def load_models() -> dict:
     if baseline_path.exists():
         logger.info("Loading baseline model from %s", baseline_path)
         _models["baseline"] = keras.models.load_model(baseline_path, compile=False)
-        logger.info(
-            "Baseline model loaded. Inputs: %s Output: %s",
-            [i.name for i in _models["baseline"].inputs],
-            _models["baseline"].output_shape,
-        )
+        logger.info("Baseline model loaded.")
     else:
-        logger.warning(
-            "Baseline weights not found at %s -- run_baseline() stays in "
-            "placeholder mode until it's downloaded there.", baseline_path,
-        )
+        logger.warning("Baseline weights not found at %s -- placeholder mode.", baseline_path)
         _models["baseline"] = None
 
-    hueview_path = MODELS_DIR / HUEVIEW_WEIGHTS_FILENAME
-    if hueview_path.exists():
-        logger.info("Loading HueView model from %s", hueview_path)
-        _models["hueview"] = keras.models.load_model(hueview_path, compile=False)
-        logger.info("HueView model loaded.")
-    else:
-        logger.info(
-            "HueView weights not found at %s -- expected for now (training "
-            "not finished). run_hueview() stays in placeholder mode.",
-            hueview_path,
-        )
-        _models["hueview"] = None
+    _models["hueview"] = _load_hueview()
 
     _loaded = True
     return _models
+
+
+def _load_hueview():
+    try:
+        import joblib
+    except ImportError:
+        logger.warning("joblib not installed -- HueView placeholder mode. pip install scikit-learn")
+        return None
+
+    models, scalers, missing = {}, {}, []
+    for region in HUEVIEW_REGIONS:
+        mpath = MODELS_DIR / f"hueview_{region}{HUEVIEW_SUFFIX}.h5"
+        spath = MODELS_DIR / f"lab_scaler_{region}{HUEVIEW_SUFFIX}.pkl"
+        if not mpath.exists():
+            missing.append(mpath.name); continue
+        if not spath.exists():
+            missing.append(spath.name); continue
+        models[region] = keras.models.load_model(mpath, compile=False)
+        scalers[region] = joblib.load(spath)
+
+    if missing:
+        logger.warning("HueView placeholder mode -- missing %d file(s): %s",
+                       len(missing), ", ".join(missing))
+        return None
+
+    logger.info("HueView loaded (%d regions, PROVISIONAL geometric-trained weights).", len(models))
+    return {"models": models, "scalers": scalers}
 
 
 def models_loaded() -> dict:
