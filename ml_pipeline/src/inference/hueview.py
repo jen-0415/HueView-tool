@@ -1,22 +1,21 @@
 """
 Phase 14.6 -- run_hueview()
 
-The full HueView path for one image: SSR -> MediaPipe landmarks ->
-regional segmentation -> HSV skin filtering -> CIELAB -> undertone.
+SSR -> MediaPipe landmarks -> regional segmentation -> HSV skin filtering ->
+CIELAB -> undertone (manuscript path, for the undertone + L*a*b* display).
 
-Everything here is REAL except the SCC classification. Each stage calls the
-same module the batch runs used, so a number shown in the demo is produced
-by the same code that produced the results tables.
+CLASSIFICATION (SCC) uses a SEPARATE, provisional path that matches the
+CURRENT geometric-trained weights: SSR face under the geometric convex-hull
+mask (NO HSV filtering), cv2 CIELAB (train.py's cielab_mean), scaled by each
+region's lab_scaler. This flips back to the manuscript path once the
+compliant retrain lands.
 
-Ordering note, per the manuscript: landmarks come from the ORIGINAL crop
-(SSR strips the contrast MediaPipe needs), masking is applied to the
-SSR-NORMALIZED image.
+Ordering note: landmarks from the ORIGINAL crop; masking on the SSR image.
 """
 
 from __future__ import annotations
 
 import time
-from pathlib import Path
 from typing import Dict, Optional
 
 import numpy as np
@@ -34,6 +33,14 @@ from .paths import find_landmarker
 from .preprocess import NoFaceDetected
 
 LANDMARKER_MODEL = find_landmarker()
+
+SCC_CLASS_ORDER = ["SCC-1", "SCC-2", "SCC-3", "SCC-4", "SCC-5", "SCC-6"]
+_NULL_CLS = {"scc": None, "probabilities": None, "confidence": None, "margin": None}
+
+# full_face training input domain is unconfirmed. train.py's load_face reads
+# data/processed/images/processed (looks NON-SSR), so default to the raw crop.
+# If full_face predictions look off, flip this to True (use the SSR face).
+HUEVIEW_FULLFACE_SSR = False
 
 _SELECTOR = RegionalConfigurationSelector()
 _landmarker = None
@@ -59,15 +66,13 @@ def _get_landmarker():
             base_options=mp_python.BaseOptions(model_asset_path=str(LANDMARKER_MODEL)),
             running_mode=mp_vision.RunningMode.IMAGE,
             num_faces=1,
-            min_face_detection_confidence=0.5,  # matches landmark_extraction.py
+            min_face_detection_confidence=0.5,
         )
         _landmarker = mp_vision.FaceLandmarker.create_from_options(options)
     return _landmarker
 
 
 def extract_landmarks(crop_rgb: np.ndarray) -> Optional[np.ndarray]:
-    """468 landmarks in pixel coords -- same format as Phase 7.1's
-    landmarks.npy rows, so build_region_mask consumes them unchanged."""
     import mediapipe as mp
 
     landmarker = _get_landmarker()
@@ -82,16 +87,75 @@ def extract_landmarks(crop_rgb: np.ndarray) -> Optional[np.ndarray]:
         [[lm.x * w, lm.y * h, lm.z] for lm in result.face_landmarks[0]],
         dtype=np.float32,
     )
-    return coords[:468]  # drop the 10 iris points, matching Phase 7.1
+    return coords[:468]
+
+
+# ---------------- provisional classification helpers ----------------------
+def _cielab_mean_cv2(patch_rgb: np.ndarray, mask) -> np.ndarray:
+    """train.py's cielab_mean, verbatim: cv2 RGB2LAB then rescale to real units."""
+    import cv2
+    lab = cv2.cvtColor(patch_rgb.astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
+    lab[..., 0] *= 100.0 / 255.0
+    lab[..., 1] -= 128.0
+    lab[..., 2] -= 128.0
+    px = lab[mask] if mask is not None else lab.reshape(-1, 3)
+    if px.size == 0:
+        return np.zeros(3, dtype=np.float32)
+    return px.mean(axis=0).astype(np.float32)
+
+
+def _predict_one(model, scaler, img_patch: np.ndarray, lab_raw: np.ndarray) -> Dict:
+    img_in = np.expand_dims(img_patch.astype("float32"), 0)          # 0-255, EffNet rescales
+    lab_scaled = scaler.transform(lab_raw.reshape(1, -1)).astype("float32")
+    probs = model.predict({"img": img_in, "lab": lab_scaled}, verbose=0)[0]
+    order = np.sort(probs)[::-1]
+    idx = int(np.argmax(probs))
+    return {
+        "scc": SCC_CLASS_ORDER[idx],
+        "probabilities": probs.tolist(),
+        "confidence": float(probs[idx]),
+        "margin": float(order[0] - order[1]),
+    }
+
+
+def _classify_hueview(crop_rgb, ssr, masks, hv) -> Dict:
+    models, scalers = hv["models"], hv["scalers"]
+    out = {"regions": {}, "full_face": None, "headline": None}
+
+    all_probs = []
+    for name in ("forehead", "left_cheek", "right_cheek", "nose_bridge", "jawline"):
+        geom = masks[name]
+        patch = ssr.copy()
+        patch[~geom] = 0
+        nonblack = patch.any(axis=2)
+        lab_raw = _cielab_mean_cv2(patch, nonblack)
+        res = _predict_one(models[name], scalers[name], patch, lab_raw)
+        out["regions"][name] = res
+        all_probs.append(np.array(res["probabilities"], dtype=np.float64))
+
+    ff_img = ssr if HUEVIEW_FULLFACE_SSR else crop_rgb
+    ff_lab = _cielab_mean_cv2(ff_img, None)
+    ff_res = _predict_one(models["full_face"], scalers["full_face"], ff_img, ff_lab)
+    out["full_face"] = ff_res
+    all_probs.append(np.array(ff_res["probabilities"], dtype=np.float64))  # full_face isasama na sa headline
+
+    mean = np.mean(all_probs, axis=0)
+    order = np.sort(mean)[::-1]
+    idx = int(np.argmax(mean))
+    out["headline"] = {
+        "scc": SCC_CLASS_ORDER[idx],
+        "probabilities": mean.tolist(),
+        "confidence": float(mean[idx]),
+        "margin": float(order[0] - order[1]),
+    }
+    return out
 
 
 def run_hueview(crop_rgb: np.ndarray) -> Dict:
     t0 = time.perf_counter()
 
-    # --- 7.2 SSR (real) ---------------------------------------------------
     ssr = apply_ssr(crop_rgb)
 
-    # --- 7.1 landmarks, on the ORIGINAL crop (real) -----------------------
     landmarks = extract_landmarks(crop_rgb)
     if landmarks is None:
         raise NoFaceDetected(
@@ -99,23 +163,25 @@ def run_hueview(crop_rgb: np.ndarray) -> Dict:
             "Regional analysis needs the mesh, so HueView can't run on this image."
         )
 
-    # --- 7.3 geometric masks (real) ---------------------------------------
     masks = {
         name: build_region_mask(landmarks, idxs, ssr.shape).astype(bool)
         for name, idxs in REGIONS.items()
     }
 
-    # --- 7.4 HSV skin filtering, frozen config (real) ---------------------
     patches = filter_all_regions(
         ssr_image=ssr,
         geometric_masks=masks,
         config=HSV_CONFIG,
-        reference_image=crop_rgb,  # only used when hsv_source == "original"
+        reference_image=crop_rgb,
     )
 
-    # --- 7.5 routing (real) -----------------------------------------------
     configs = _SELECTOR.route_all(patches, image_id="inference")
     full = configs.get(FULL_FACE)
+
+    # ---- provisional SCC classification (geometric path) ----
+    hv = load_models()["hueview"]
+    is_placeholder = hv is None
+    cls = _classify_hueview(crop_rgb, ssr, masks, hv) if not is_placeholder else None
 
     original = crop_rgb if CIELAB_FROM_ORIGINAL else None
     region_rows = []
@@ -130,14 +196,7 @@ def run_hueview(crop_rgb: np.ndarray) -> Dict:
     }
 
     if full is not None:
-        # --- 8.2 CIELAB (real) -- one 15-d vector, 3 per region in
-        # REGION_ORDER. Taking per-region values from this single vector
-        # (rather than recomputing each region separately) guarantees the
-        # displayed L*a*b* are exactly what the undertone vote used.
         vector = build_cielab_vector(full, original_rgb=original)
-
-        # --- 9 undertone (real) -- their module, including the 340-degree
-        # hue-wraparound correction and the 60-degree tie-break.
         descriptor = compute_undertone_descriptor(full, vector)
 
         per_region = vector.reshape(-1, 3)
@@ -146,6 +205,7 @@ def run_hueview(crop_rgb: np.ndarray) -> Dict:
         for name, (L, a, b) in zip(full.component_order(), per_region):
             patch = patches.get(name)
             info = descriptor["regions"].get(name, {})
+            cls_r = cls["regions"][name] if cls else _NULL_CLS
             region_rows.append({
                 "name": REGION_DISPLAY[name],
                 "region_key": name,
@@ -153,14 +213,13 @@ def run_hueview(crop_rgb: np.ndarray) -> Dict:
                 "a": round(float(a), 2),
                 "b": round(float(b), 2),
                 "pixels": int(patch.n_valid_px) if patch else 0,
-                # Imputed regions had no usable skin -- their values are
-                # borrowed from the rest of the face, so flag them as not used.
                 "used": name not in imputed,
                 "imputed": name in imputed,
                 "status": patch.status if patch else "empty",
                 "retention": round(patch.retention, 3) if patch else 0.0,
                 "hue_angle_deg": round(float(info.get("hue_deg")), 2) if info.get("hue_deg") is not None else None,
                 "undertone": info.get("undertone"),
+                **cls_r,
             })
 
         face_mean = per_region.mean(axis=0)
@@ -186,24 +245,25 @@ def run_hueview(crop_rgb: np.ndarray) -> Dict:
             "was_tied": descriptor["was_tied"],
         }
 
-        # Full Face row, for the regions table in the UI.
         full_hue = float(np.degrees(np.arctan2(face_mean[2], face_mean[1])) % 360)
+        ff_cls = cls["full_face"] if cls else _NULL_CLS
         region_rows.append({
             "name": REGION_DISPLAY[FULL_FACE],
             "region_key": FULL_FACE,
             **face_lab,
             "pixels": int(full.n_valid_px),
-            "used": False,  # composite, not a voter
+            "used": False,
             "imputed": False,
             "status": full.status,
             "retention": None,
             "hue_angle_deg": round(full_hue, 2),
             "undertone": None,
+            **ff_cls,
         })
     else:
-        # Every region failed -- report the empties rather than inventing values.
         for name in REGION_ORDER:
             patch = patches.get(name)
+            cls_r = cls["regions"][name] if cls else _NULL_CLS
             region_rows.append({
                 "name": REGION_DISPLAY[name],
                 "region_key": name,
@@ -213,24 +273,21 @@ def run_hueview(crop_rgb: np.ndarray) -> Dict:
                 "status": patch.status if patch else "empty",
                 "retention": round(patch.retention, 3) if patch else 0.0,
                 "hue_angle_deg": None, "undertone": None,
+                **cls_r,
             })
 
-    # ---------------- CLASSIFY (placeholder -- needs weights) -------------
-    # Real version, per Phase 8.3:
-    #   models = load_models()["hueview"]
-    #   model = models[chosen_config]           # or the shared model
-    #   cnn_in = np.expand_dims(cfg.image.astype("float32"), 0)
-    #   lab_in = np.expand_dims(vector, 0)       # 3-d or 15-d
-    #   probs = model.predict([cnn_in, lab_in])[0]
-    models = load_models()["hueview"]
-    is_placeholder = models is None
-    scc = probabilities = confidence = margin = None
-    # ----------------------------------------------------------------------
+    # ---- headline SCC = ensemble mean of all 6 region softmaxes ----
+    if cls:
+        head = cls["headline"]
+        scc, probabilities = head["scc"], head["probabilities"]
+        confidence, margin = head["confidence"], head["margin"]
+    else:
+        scc = probabilities = confidence = margin = None
 
     return {
         "name": "HueView",
         "method": "SSR + regional segmentation",
-        "checkpoint": "no weights loaded" if is_placeholder else "loaded",
+        "checkpoint": "no weights loaded" if is_placeholder else "loaded (provisional)",
         "placeholder": is_placeholder,
         "scc": scc,
         "probabilities": probabilities,
