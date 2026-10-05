@@ -2,47 +2,19 @@
 Phase 7.4 -- Full-Dataset HSV Skin Filtering (batch run)
 
 Runs the frozen Phase 7.4 methodology (configs/hsv_skin_thresholds.json,
-hsv_source="original" -- chosen over the manuscript-literal "ssr" reading
-based on the n=300 comparison: ~57% geometry_fallback under "ssr" vs.
-single digits under "original", across every region) across the full
-landmarked dataset.
+hsv_source="original") across the full landmarked dataset.
 
-Follows regions.py's intended caching contract rather than 7.3's
-separate-JPEG-per-region style: each image's 5 geometric masks and their
-post-HSV skin masks are packed via encode_label_map() into ONE compact PNG
-per image. SSR itself is NOT re-saved here -- per regions.py's own
-docstring, it's cheap enough to recompute on the fly from faces_ssr/ at
-Phase 8 read time (via decode_label_map(label, ssr_image)); only the masks,
-which are expensive to recompute (MediaPipe + polygon + HSV + morphology),
-are cached.
+Packs geometric & skin masks via encode_label_map() into ONE PNG per image,
+saved as label_maps/<exact manifest filename>.png (" (2)" kept -- it marks a
+different image, the c2_processed copy).
 
-This does NOT replace data/processed/regions/ (7.3's crops) -- those stay
-as-is, already used for visual QA. This is a separate, Phase-8-ready
-artifact.
-
-Input:
-    data/processed/landmarks.npy        -- (N, 468, 3), from 7.1
-    data/processed/landmarks_index.csv  -- row_index, filename
-    data/processed/faces_ssr/<filename> -- SSR output, from 7.2
-    configs/hsv_skin_thresholds.json    -- frozen Phase 7.4 config
-    (each filename's original pre-SSR crop is located via
-     path_resolver.resolve_image_path -- needed because the frozen config
-     uses hsv_source="original")
-
-Output:
-    data/processed/label_maps/<filename, .png>       -- packed masks,
-                                                         one file per image
-    data/processed/phase7_4_full_coverage_stats.csv  -- filename, region,
-                                                         status, retention --
-                                                         the real,
-                                                         full-dataset
-                                                         Sampling Data
-                                                         evidence, not the
-                                                         n=300 QA sample
-    data/processed/phase7_4_failures.csv             -- filename, reason
-                                                         (only if any)
+Expects data/processed/images/ rebuilt from resolved_manifest.csv
+(rebuild_images_from_manifest.py) and SSR images in data/processed/images_ssr/
+(ssr_normalization.py, sigma = 30), both under the exact manifest filenames.
 """
 
+import os
+import re
 import sys
 from pathlib import Path
 from multiprocessing import Pool, cpu_count
@@ -55,15 +27,20 @@ from tqdm import tqdm
 # ------------------------------------------------------------ project root --
 
 
-def find_project_root(start: Path, marker: str = "data") -> Path:
+def find_project_root(start: Path, marker: str = "ml_pipeline") -> Path:
+    """Walk upward from `start` until a directory containing `marker` is found."""
     for candidate in [start] + list(start.parents):
         if (candidate / marker).is_dir():
             return candidate
+        if candidate.name == marker:
+            return candidate.parent
     return start
 
 
 PROJECT_ROOT = find_project_root(Path(__file__).resolve().parent)
-sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from ml_pipeline.src.baseline.path_resolver import resolve_image_path  # noqa: E402
 from ml_pipeline.src.hueview.segment_regions import REGIONS, build_region_mask  # noqa: E402
@@ -72,30 +49,165 @@ from ml_pipeline.src.hueview.regions import encode_label_map  # noqa: E402
 
 # ---------------------------------------------------------------- config --
 
-LANDMARKS_PATH = PROJECT_ROOT / "data" / "processed" / "landmarks.npy"
-INDEX_PATH = PROJECT_ROOT / "data" / "processed" / "landmarks_index.csv"
-SSR_ROOT = PROJECT_ROOT / "data" / "processed" / "faces_ssr"
-LABEL_MAPS_ROOT = PROJECT_ROOT / "data" / "processed" / "label_maps"
-CONFIG_PATH = PROJECT_ROOT / "configs" / "hsv_skin_thresholds.json"
-STATS_PATH = PROJECT_ROOT / "data" / "processed" / "phase7_4_full_coverage_stats.csv"
-FAILURES_PATH = PROJECT_ROOT / "data" / "processed" / "phase7_4_failures.csv"
+DATA_PROCESSED = PROJECT_ROOT / "ml_pipeline" / "data" / "processed"
+IMAGES_ROOT = DATA_PROCESSED / "images"
+SSR_ROOT = DATA_PROCESSED / "images_ssr"
 
-LIMIT = None  # e.g. 50 to sanity-check before the full run
+LANDMARKS_PATH = DATA_PROCESSED / "landmarks.npy"
+INDEX_PATH = DATA_PROCESSED / "landmarks_index.csv"
+LABEL_MAPS_ROOT = DATA_PROCESSED / "label_maps"
+CONFIG_PATH = PROJECT_ROOT / "ml_pipeline" / "configs" / "hsv_skin_thresholds.json"
+STATS_PATH = DATA_PROCESSED / "phase7_4_full_coverage_stats.csv"
+FAILURES_PATH = DATA_PROCESSED / "phase7_4_failures.csv"
 
-CONFIG = FilterConfig.from_json(CONFIG_PATH)
+LIMIT = None  # None ensures all ~43k images are processed
+
+# Global lookup tables shared across worker tasks
+LOOKUP_TABLES = (None, None, None)
+CONFIG_OBJ = None
+
+# ----------------------------------------------------------- lookup maps --
+
+
+def build_image_lookup_table() -> tuple[dict[str, Path], dict[str, list[Path]], dict[str, Path]]:
+    """Indexes IMAGES_ROOT with multi-level fallbacks."""
+    print(f"Indexing pre-SSR images under {IMAGES_ROOT}...")
+    exact_map = {}
+    name_to_paths = {}
+    stem_map = {}
+    valid_exts = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+    if IMAGES_ROOT.is_dir():
+        for root, _, files in os.walk(IMAGES_ROOT):
+            root_path = Path(root)
+            for file in files:
+                ext = Path(file).suffix.lower()
+                if ext in valid_exts:
+                    full_path = root_path / file
+
+                    try:
+                        rel_mst = full_path.relative_to(IMAGES_ROOT)
+                        exact_map[str(rel_mst).replace("\\", "/")] = full_path
+                        exact_map[str(rel_mst)] = full_path
+                    except ValueError:
+                        pass
+
+                    file_lower = file.lower()
+                    if file_lower not in name_to_paths:
+                        name_to_paths[file_lower] = []
+                    name_to_paths[file_lower].append(full_path)
+
+                    stem_map[Path(file).stem.lower()] = full_path
+
+    print(f"Indexed {len(exact_map)} relative paths and {len(name_to_paths)} unique filenames.")
+    return exact_map, name_to_paths, stem_map
+
+
+def get_path_variants(file_str: str) -> list[str]:
+    """Generates clean filename variants and swaps extensions (.png <-> .bmp <-> .jpg)."""
+    clean_str = re.sub(r"\s*\(\d+\)", "", file_str)
+    variants = [file_str, clean_str]
+    
+    extended_variants = []
+    for var in variants:
+        p = Path(var)
+        extended_variants.append(var)
+        for ext in [".bmp", ".jpg", ".png", ".jpeg"]:
+            if p.suffix.lower() != ext:
+                extended_variants.append(str(p.with_suffix(ext)))
+
+    # Preserve order while removing duplicates
+    return list(dict.fromkeys(extended_variants))
+
+
+def resolve_local_path(filename: str, exact_map: dict, name_to_paths: dict, stem_map: dict):
+    """Resolves local paths across MST subfolders, stripping copy suffixes and testing extensions."""
+    str_file = str(filename).replace("\\", "/")
+    if "images/" in str_file:
+        str_file = str_file.split("images/")[-1]
+
+    variants = get_path_variants(str_file)
+
+    for var in variants:
+        if var in exact_map:
+            return exact_map[var]
+
+        bare_name = Path(var).name.lower()
+        if bare_name in name_to_paths:
+            return name_to_paths[bare_name][0]
+
+        stem_name = Path(var).stem.lower()
+        if stem_name in stem_map:
+            return stem_map[stem_name]
+
+        if f"{stem_name}_1" in stem_map:
+            return stem_map[f"{stem_name}_1"]
+
+    resolved, _, _ = resolve_image_path(filename)
+    return resolved
+
+
+def resolve_ssr_path(filename: str) -> Path | None:
+    """Locates the SSR-normalized image across cohort directories and extension variants."""
+    str_file = str(filename).replace("\\", "/")
+    if "images/" in str_file:
+        str_file = str_file.split("images/")[-1]
+
+    variants = get_path_variants(str_file)
+
+    # 1. Direct path check under SSR_ROOT
+    for var in variants:
+        cand = SSR_ROOT / var
+        if cand.is_file():
+            return cand
+
+    # 2. Priority cohort scan
+    cohorts = ["processed", "v5_processed", "c1_processed", "c2_processed"]
+    for cohort in cohorts:
+        for var in variants:
+            cand = SSR_ROOT / cohort / var
+            if cand.is_file():
+                return cand
+            
+            # Subfolder duplicate prefix check
+            v_path = Path(var)
+            cand_sub = SSR_ROOT / cohort / v_path
+            if cand_sub.is_file():
+                return cand_sub
+
+    # 3. Fallback scan by bare filename
+    bare_names = list(set(Path(v).name.lower() for v in variants))
+    for bare_name in bare_names:
+        matched = list(SSR_ROOT.rglob(bare_name))
+        if matched and matched[0].is_file():
+            return matched[0]
+
+    return None
+
 
 # --------------------------------------------------------------- worker --
 
 
+def init_worker(config_data, exact_map, name_to_paths, stem_map):
+    """Worker process initializer to store lookup objects globally per process."""
+    global CONFIG_OBJ, LOOKUP_TABLES
+    CONFIG_OBJ = config_data
+    LOOKUP_TABLES = (exact_map, name_to_paths, stem_map)
+
+
 def process_one(args):
     filename, row_index, landmarks_px = args
+    exact_map, name_to_paths, stem_map = LOOKUP_TABLES
 
-    ssr_path = SSR_ROOT / filename
+    # 1. Resolve SSR image path
+    ssr_path = resolve_ssr_path(filename)
+    if ssr_path is None or not ssr_path.is_file():
+        return (filename, None, "ssr_image_missing_or_unreadable")
+
     ssr_bgr = cv2.imread(str(ssr_path))
     if ssr_bgr is None:
         return (filename, None, "ssr_image_missing_or_unreadable")
 
-    # hsv_skin_filter.py requires RGB -- faces_ssr/ files are BGR on disk.
     ssr_rgb = cv2.cvtColor(ssr_bgr, cv2.COLOR_BGR2RGB)
 
     geometric_masks = {
@@ -104,10 +216,11 @@ def process_one(args):
     }
 
     reference_rgb = None
-    if CONFIG.hsv_source == "original":
-        orig_path, _, _ = resolve_image_path(filename)
-        if orig_path is None:
+    if CONFIG_OBJ.hsv_source == "original":
+        orig_path = resolve_local_path(filename, exact_map, name_to_paths, stem_map)
+        if orig_path is None or not Path(orig_path).is_file():
             return (filename, None, "original_not_found")
+
         orig_bgr = cv2.imread(str(orig_path))
         if orig_bgr is None:
             return (filename, None, "original_unreadable")
@@ -116,13 +229,24 @@ def process_one(args):
     patches = filter_all_regions(
         ssr_image=ssr_rgb,
         geometric_masks=geometric_masks,
-        config=CONFIG,
+        config=CONFIG_OBJ,
         reference_image=reference_rgb,
     )
 
     label_map = encode_label_map(patches, ssr_rgb.shape[:2])
-    out_path = LABEL_MAPS_ROOT / Path(filename).with_suffix(".png")
+    
+    # Save the encoded label map under the EXACT manifest filename (only the
+    # extension becomes .png). Do NOT strip " (2)": in this dataset " (2)" marks
+    # the c2_processed copy, a different image from the same name without it,
+    # so stripping it made two images share -- and overwrite -- one label map.
+    # Phases 7.5, 9 and visual_qa look label maps up by the exact filename.
+    str_file = str(filename).replace("\\", "/")
+    if "images/" in str_file:
+        str_file = str_file.split("images/")[-1]
+
+    out_path = LABEL_MAPS_ROOT / Path(str_file).with_suffix(".png")
     out_path.parent.mkdir(parents=True, exist_ok=True)
+
     ok = cv2.imwrite(str(out_path), label_map)
     if not ok:
         return (filename, None, "label_map_write_failed")
@@ -137,12 +261,18 @@ def process_one(args):
 
 def run():
     print(f"Project root: {PROJECT_ROOT}")
-    print(f"Using frozen config: {CONFIG_PATH} (hsv_source={CONFIG.hsv_source})")
 
     if not LANDMARKS_PATH.is_file() or not INDEX_PATH.is_file():
-        raise SystemExit("ERROR: landmarks.npy / landmarks_index.csv not found -- run landmark_extraction.py (7.1) first.")
+        raise SystemExit(
+            "ERROR: landmarks.npy / landmarks_index.csv not found -- run landmark_extraction.py (7.1) first."
+        )
     if not CONFIG_PATH.is_file():
         raise SystemExit(f"ERROR: {CONFIG_PATH} not found -- freeze the Phase 7.4 config first.")
+
+    config = FilterConfig.from_json(CONFIG_PATH)
+    print(f"Using frozen config: {CONFIG_PATH} (hsv_source={config.hsv_source})")
+
+    exact_map, name_to_paths, stem_map = build_image_lookup_table()
 
     landmarks_array = np.load(LANDMARKS_PATH)
     index_df = pd.read_csv(INDEX_PATH)
@@ -162,8 +292,12 @@ def run():
     all_rows = []
     failures = []
 
-    with Pool(processes=cpu_count()) as pool:
-        for filename, rows, error in tqdm(pool.imap_unordered(process_one, jobs), total=len(jobs)):
+    with Pool(
+        processes=cpu_count(),
+        initializer=init_worker,
+        initargs=(config, exact_map, name_to_paths, stem_map),
+    ) as pool:
+        for filename, rows, error in tqdm(pool.imap_unordered(process_one, jobs), total=len(jobs), desc="Phase 7.4"):
             if error is not None:
                 failures.append({"filename": filename, "reason": error})
             else:
@@ -182,7 +316,11 @@ def run():
         print(f"Saved coverage stats to {STATS_PATH}")
         stats_df = pd.DataFrame(all_rows)
         print("\nRETENTION BY REGION (this run)")
-        print(stats_df.pivot_table(index="region", values="retention", aggfunc="mean").round(3).to_string())
+        print(
+            stats_df.pivot_table(index="region", values="retention", aggfunc="mean")
+            .round(3)
+            .to_string()
+        )
         print("\nFILTER TIER USAGE (this run)")
         print(stats_df.groupby(["region", "status"]).size().unstack(fill_value=0).to_string())
 

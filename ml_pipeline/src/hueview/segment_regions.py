@@ -2,28 +2,15 @@
 Phase 7.3 -- Regional Segmentation
 
 Uses Stream A landmarks (7.1) to define 5 region boundaries, applies them
-to the SSR-normalized image (7.2) via binary masking. Landmarks come from
-the raw image; masking happens on the SSR-normalized image, per spec.
+to the SSR-normalized image (7.2) via binary masking.
 
-Region index groups are the ones confirmed from derive_regions.py's v5 run
-(forehead/nose_bridge/jawline solidly anchored on official MediaPipe
-groups; left_cheek/right_cheek corrected in v5 -- each cheek is now bounded
-by the lower eyelid on the same image side, the nose wing medially, the lip
-line below, and an inset mesh ring laterally, keeping the hull off the ear
-and ensuring all five regions are disjoint).
-
-Input:
-    data/processed/landmarks.npy         -- (N, 468, 3) pixel coords, from 7.1
-    data/processed/landmarks_index.csv   -- row_index, filename
-    data/processed/faces_ssr/<filename>  -- SSR-normalized images, from 7.2
-
-Output:
-    data/processed/regions/<MST-N>/<basename>_<region>.jpg -- one masked
-        image per region per face (5 per successful image), zeros outside
-        the region, per spec
-    data/processed/regions_index.csv     -- filename, region, output_path
+Includes resolution rules for:
+1. Suffix routing e.g. " (2).jpg" -> c2_processed
+2. Extension mismatches e.g. manifest .png vs disk .bmp / .jpg
 """
 
+import sys
+import re
 from pathlib import Path
 from multiprocessing import Pool, cpu_count
 from itertools import combinations
@@ -33,15 +20,25 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-LANDMARKS_PATH = Path("data/processed/landmarks.npy")
-INDEX_PATH = Path("data/processed/landmarks_index.csv")
-SSR_ROOT = Path("data/processed/faces_ssr")
-OUTPUT_ROOT = Path("data/processed/regions")
-OUTPUT_INDEX_PATH = Path("data/processed/regions_index.csv")
 
-# Region landmark index groups generated 2026-09-08 from:
-# data/processed/images/processed/MST-2/rhnorm_Faces 95rhnorm.11_face_1.jpg
-# See derive_regions.py (v5) and region_reference_v5_final.png for derivation.
+def find_project_root(start: Path, marker: str = "ml_pipeline") -> Path:
+    """Walk upward from `start` until a directory containing `marker` is found."""
+    for candidate in [start] + list(start.parents):
+        if (candidate / marker).is_dir():
+            return candidate
+    return start
+
+
+PROJECT_ROOT = find_project_root(Path(__file__).resolve().parent)
+DATA_DIR = PROJECT_ROOT / "ml_pipeline" / "data" / "processed"
+
+LANDMARKS_PATH = DATA_DIR / "landmarks.npy"
+INDEX_PATH = DATA_DIR / "landmarks_index.csv"
+SSR_ROOT = DATA_DIR / "images_ssr"
+OUTPUT_ROOT = DATA_DIR / "regions"
+OUTPUT_INDEX_PATH = DATA_DIR / "regions_index.csv"
+FAILURES_PATH = DATA_DIR / "region_segmentation_failures.csv"
+
 REGIONS = {
     "forehead": [10, 21, 46, 52, 53, 54, 55, 63, 65, 66, 67, 70, 103, 105, 107, 109,
                  162, 251, 276, 282, 283, 284, 285, 293, 295, 296, 297, 300, 332, 334, 336, 338],
@@ -59,15 +56,10 @@ _clashes = {
     if set(REGIONS[a]) & set(REGIONS[b])
 }
 if _clashes:
-    raise ValueError(
-        f"REGIONS index groups overlap, so their convex hulls will too: {_clashes}. "
-        "Re-derive with derive_regions.py rather than editing indices by hand."
-    )
+    raise ValueError(f"REGIONS index groups overlap: {_clashes}.")
 
 
 def build_region_mask(landmarks_px, region_indices, shape):
-    """landmarks_px: (468, 3) array [x_px, y_px, z_rel]. Returns a binary
-    mask (h, w), 1 inside the region's convex hull, 0 outside."""
     pts = landmarks_px[region_indices, :2].astype(np.int32)
     mask = np.zeros(shape[:2], dtype=np.uint8)
     if len(pts) >= 3:
@@ -76,9 +68,77 @@ def build_region_mask(landmarks_px, region_indices, shape):
     return mask
 
 
+def get_filename_variants(filename):
+    """Generates path variations considering clean names and extension mismatches (.png -> .bmp/.jpg)."""
+    clean_filename = re.sub(r"\s*\(\d+\)(?=\.[^.]+$)", "", filename)
+    
+    base_names = [filename, clean_filename]
+    variants = []
+
+    for name in base_names:
+        p = Path(name)
+        variants.append(name)
+        # Alternate extensions if original is .png or .jpg
+        for ext in [".bmp", ".jpg", ".jpeg", ".png"]:
+            if p.suffix.lower() != ext:
+                variants.append(str(p.with_suffix(ext)))
+                
+    return list(dict.fromkeys(variants))  # Preserve order, remove duplicates
+
+
+def locate_ssr_image(filename):
+    """Locates the SSR image across cohort directories handling suffixes and extension swaps."""
+    variants = get_filename_variants(filename)
+
+    # 1. Check direct path with variations
+    for v in variants:
+        direct_path = SSR_ROOT / v
+        if direct_path.exists():
+            return direct_path
+
+    # Determine cohort priority order
+    suffix_match = re.search(r"\s*\((\d+)\)(?=\.[^.]+$)", filename)
+    if suffix_match:
+        suffix_num = suffix_match.group(1)
+        priority_cohorts = [f"c{suffix_num}_processed", "v5_processed", "c1_processed", "processed"]
+    else:
+        priority_cohorts = ["processed", "v5_processed", "c1_processed", "c2_processed"]
+
+    # 2. Check priority cohorts
+    for cohort in priority_cohorts:
+        for v in variants:
+            candidate = SSR_ROOT / cohort / v
+            if candidate.exists():
+                return candidate
+
+            # Handle duplicated MST folder prefix inside cohort directory
+            v_path = Path(v)
+            candidate_sub = SSR_ROOT / cohort / v_path
+            if candidate_sub.exists():
+                return candidate_sub
+
+    # 3. Fallback check across all subfolders in SSR_ROOT
+    for cohort_dir in SSR_ROOT.iterdir():
+        if cohort_dir.is_dir():
+            for v in variants:
+                cand = cohort_dir / v
+                if cand.exists():
+                    return cand
+
+                if v.startswith(f"{cohort_dir.name}/"):
+                    stripped = v.replace(f"{cohort_dir.name}/", "", 1)
+                    if (cohort_dir / stripped).exists():
+                        return cohort_dir / stripped
+
+    return None
+
+
 def process_one(args):
     filename, row_index, landmarks_px = args
-    ssr_path = SSR_ROOT / filename
+
+    ssr_path = locate_ssr_image(filename)
+    if ssr_path is None:
+        return (filename, None, "ssr_image_missing_or_unreadable")
 
     ssr_image = cv2.imread(str(ssr_path))
     if ssr_image is None:
@@ -103,6 +163,9 @@ def process_one(args):
 
 
 def run():
+    print(f"Project root: {PROJECT_ROOT}")
+    print(f"Reading landmarks from: {LANDMARKS_PATH}")
+
     landmarks_array = np.load(LANDMARKS_PATH)  # (N, 468, 3)
     index_df = pd.read_csv(INDEX_PATH)
     print(f"Loaded {len(index_df)} landmark rows, landmarks array shape {landmarks_array.shape}")
@@ -116,20 +179,21 @@ def run():
     failures = []
 
     with Pool(processes=cpu_count()) as pool:
-        for filename, outputs, error in tqdm(pool.imap_unordered(process_one, jobs), total=len(jobs)):
+        for filename, outputs, error in tqdm(pool.imap_unordered(process_one, jobs), total=len(jobs), desc="Phase 7.3"):
             if error is not None:
                 failures.append({"filename": filename, "reason": error})
             else:
                 for fname, region, path in outputs:
                     output_rows.append({"filename": fname, "region": region, "output_path": path})
 
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(output_rows).to_csv(OUTPUT_INDEX_PATH, index=False)
     if failures:
-        pd.DataFrame(failures).to_csv(Path("data/processed/region_segmentation_failures.csv"), index=False)
+        pd.DataFrame(failures).to_csv(FAILURES_PATH, index=False)
 
     n_success = len(index_df) - len(failures)
     print(f"\nProcessed {n_success} / {len(index_df)} images successfully")
-    print(f"Failed: {len(failures)} (logged to region_segmentation_failures.csv)" if failures else "Failed: 0")
+    print(f"Failed: {len(failures)} (logged to {FAILURES_PATH.name})" if failures else "Failed: 0")
     print(f"Generated {len(output_rows)} region-masked images ({n_success} images x 5 regions)")
     print(f"Saved index to {OUTPUT_INDEX_PATH}")
 

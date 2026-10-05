@@ -2,70 +2,16 @@
 Phase 7.1 -- MediaPipe Landmark Extraction (Stream A)
 
 Runs MediaPipe's face landmarker on the Phase 3 processed (224x224,
-un-normalized) face images and stores the landmarks per image. Phase 7.3
-uses these to build the 5 regional boundaries -- they must come from the
-ORIGINAL image, not the SSR output from 7.2 (SSR strips the contrast the
-landmarker needs to place points accurately).
-
-NOTE ON THE MEDIAPIPE VERSION: the classic `mp.solutions.face_mesh.FaceMesh`
-API used in most tutorials (and matching the "468 landmarks" framing in the
-plan) has been removed from current mediapipe releases -- `pip install
-mediapipe` today only ships the newer Tasks API
-(`mediapipe.tasks.vision.FaceLandmarker`), confirmed against mediapipe
-0.10.33. Its default model returns 478 points: the classic 468-point mesh
-plus 10 iris points appended at indices 468-477. This script keeps just the
-first 468 so your downstream phases match the plan's numbers exactly -- see
-`coords[:NUM_LANDMARKS]` below.
-
-PATH RESOLUTION -- FIXED. This script now calls
-baseline.path_resolver.resolve_image_path() instead of doing its own
-folder search. The previous in-script search had two defects that
-resolve_image_path() already handles correctly, and that every other
-script in this pipeline already relies on it for:
-
-  1. SUFFIX ROUTING (the serious one). The old code stripped " (2)" from
-     the filename and then searched folders in the order processed,
-     c1_processed, c2_processed, v5_processed, taking the first hit. But
-     a "(2)" row's SCC and illumination labels were computed from the
-     c2_processed rendering of that image -- so matching processed/ first
-     pairs the row's labels with a DIFFERENT image. path_resolver.py's
-     own docstring flags this explicitly: "Stripping the suffix and
-     serving the `processed` version pairs ~28% of the dataset with
-     labels derived from a different image. Nothing errors -- the numbers
-     just come out wrong." SUFFIX_ROUTING maps suffix 2 -> c2_processed
-     first, which is what the labels actually describe.
-
-  2. V5 EXTENSION MISMATCH. The v5 batch is recorded in the manifest with
-     a .png extension but stored on disk as .bmp. The old code built the
-     path with the manifest's extension and never tried .bmp, so all
-     2,497 v5 images were logged as "file_not_found" despite being
-     present locally the whole time. resolve_image_path() has an explicit
-     v5_bmp rule for this.
-
-The `path_source` column in landmarks_index.csv now records which rule
-matched (exact / suffix_routed / v5_bmp / fallback) and which batch root
-the image actually came from, so the resolution is auditable after the
-fact rather than invisible.
-
-NOTE ON RUNNING DIRECTORY: path_resolver.py anchors its roots on the
-relative path "data/processed/images", so this script must be run from
-the repo root (as all the other pipeline scripts are). Running it from
-elsewhere will resolve nothing.
-
-Input:
-    data/processed/train.csv, val.csv, test.csv -- Phase 5 frozen splits:
-                                          filename, mst_label, mean_y,
-                                          illumination_label, SCC_label,
-                                          person_id
-    data/processed/images/<batch>/<MST-N>/<file> -- resolved via
-                                          path_resolver.resolve_image_path
+un-normalized) face images and stores the landmarks per image.
 
 Output:
-    data/processed/landmarks.npy         -- float32, shape (N, 468, 3)
-    data/processed/landmarks_index.csv    -- row_index, filename, rule, root
-    data/processed/landmark_failures.csv  -- filename, reason
+    ml_pipeline/data/processed/landmarks.npy          -- float32, shape (N, 468, 3)
+    ml_pipeline/data/processed/landmarks_index.csv    -- row_index, filename, rule, root
+    ml_pipeline/data/processed/landmark_failures.csv  -- filename, reason
 """
 
+import os
+import re
 import sys
 from pathlib import Path
 
@@ -77,43 +23,138 @@ from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
 from tqdm import tqdm
 
+# ------------------------------------------------------------ project root --
 
-def find_project_root(start: Path, marker: str = "data") -> Path:
+
+def find_project_root(start: Path, marker: str = "ml_pipeline") -> Path:
     """Walk upward from `start` until a directory containing `marker` is found."""
     for candidate in [start] + list(start.parents):
         if (candidate / marker).is_dir():
             return candidate
+        if candidate.name == marker:
+            return candidate.parent
     return start
 
 
 PROJECT_ROOT = find_project_root(Path(__file__).resolve().parent)
-sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from ml_pipeline.src.baseline.path_resolver import resolve_image_path  # noqa: E402
 
+# ---------------------------------------------------------------- config --
+
+OUT_DIR = PROJECT_ROOT / "ml_pipeline" / "data" / "processed"
+IMAGES_ROOT = OUT_DIR / "images"
+
 SPLIT_PATHS = [
-    PROJECT_ROOT / "data" / "processed" / "train.csv",
-    PROJECT_ROOT / "data" / "processed" / "val.csv",
-    PROJECT_ROOT / "data" / "processed" / "test.csv",
+    OUT_DIR / "train.csv",
+    OUT_DIR / "val.csv",
+    OUT_DIR / "test.csv",
 ]
-OUT_DIR = PROJECT_ROOT / "data" / "processed"
 
 LANDMARKS_PATH = OUT_DIR / "landmarks.npy"
 INDEX_PATH = OUT_DIR / "landmarks_index.csv"
 FAILURES_PATH = OUT_DIR / "landmark_failures.csv"
 
 MODEL_PATH = PROJECT_ROOT / "face_landmarker.task"
+if not MODEL_PATH.is_file():
+    MODEL_PATH = PROJECT_ROOT / "ml_pipeline" / "face_landmarker.task"
+
 NUM_LANDMARKS = 468  # model returns 478 (468 mesh + 10 iris); keep the first 468
+
+
+def build_image_lookup_table() -> tuple[dict[str, Path], dict[str, list[Path]], dict[str, Path]]:
+    """Indexes IMAGES_ROOT with multi-level fallbacks (exact path, bare filename, stem only)."""
+    print(f"Indexing images directory under {IMAGES_ROOT}...")
+    exact_map = {}
+    name_to_paths = {}
+    stem_map = {}
+    valid_exts = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+
+    if IMAGES_ROOT.is_dir():
+        for root, _, files in os.walk(IMAGES_ROOT):
+            root_path = Path(root)
+            for file in files:
+                ext = Path(file).suffix.lower()
+                if ext in valid_exts:
+                    full_path = root_path / file
+
+                    # 1. Exact relative MST path
+                    try:
+                        rel_mst = full_path.relative_to(IMAGES_ROOT)
+                        exact_map[str(rel_mst).replace("\\", "/")] = full_path
+                        exact_map[str(rel_mst)] = full_path
+                    except ValueError:
+                        pass
+
+                    # 2. Bare filename
+                    file_lower = file.lower()
+                    if file_lower not in name_to_paths:
+                        name_to_paths[file_lower] = []
+                    name_to_paths[file_lower].append(full_path)
+
+                    # 3. Stem only
+                    stem_map[Path(file).stem.lower()] = full_path
+
+    print(f"Indexed {len(exact_map)} relative paths and {len(name_to_paths)} unique filenames.")
+    return exact_map, name_to_paths, stem_map
+
+
+def resolve_local_path(filename: str, exact_map: dict, name_to_paths: dict, stem_map: dict):
+    """Multi-stage resolution fallback including OneDrive duplicate copy handling."""
+    str_file = str(filename).replace("\\", "/")
+
+    if "images/" in str_file:
+        str_file = str_file.split("images/")[-1]
+
+    # Clean copy suffixes like ' (2)', ' (1)'
+    str_file_clean = re.sub(r"\s*\(\d+\)", "", str_file)
+
+    bare_name = Path(str_file).name.lower()
+    bare_name_clean = Path(str_file_clean).name.lower()
+
+    stem_name = Path(str_file).stem.lower()
+    stem_name_clean = Path(str_file_clean).stem.lower()
+
+    # 1. Exact match (original and clean)
+    if str_file in exact_map:
+        return exact_map[str_file], "exact_mst_match", "images"
+    if str_file_clean in exact_map:
+        return exact_map[str_file_clean], "exact_mst_clean_match", "images"
+
+    # 2. Bare filename match (original and clean)
+    if bare_name in name_to_paths:
+        return name_to_paths[bare_name][0], "bare_filename_match", "images"
+    if bare_name_clean in name_to_paths:
+        return name_to_paths[bare_name_clean][0], "bare_filename_clean_match", "images"
+
+    # 3. Stem match (original and clean)
+    if stem_name in stem_map:
+        return stem_map[stem_name], "stem_match", "images"
+    if stem_name_clean in stem_map:
+        return stem_map[stem_name_clean], "stem_clean_match", "images"
+
+    # 4. Fallback: try appending or removing trailing '_1'
+    if f"{stem_name_clean}_1" in stem_map:
+        return stem_map[f"{stem_name_clean}_1"], "stem_append_1_match", "images"
+
+    return resolve_image_path(filename)
 
 
 def load_manifest():
     """Concatenate the three frozen Phase 5 splits."""
-    return pd.concat([pd.read_csv(p) for p in SPLIT_PATHS], ignore_index=True)
+    existing_splits = [p for p in SPLIT_PATHS if p.is_file()]
+    if not existing_splits:
+        raise SystemExit(
+            f"ERROR: No split CSV files found in {OUT_DIR}. Ensure train.csv, val.csv, and test.csv exist."
+        )
+    return pd.concat([pd.read_csv(p) for p in existing_splits], ignore_index=True)
 
 
 def extract_landmarks(landmarker, image_rgb: np.ndarray):
-    """image_rgb: (224, 224, 3) uint8, RGB. Returns (468, 3) float32
-    [x_px, y_px, z_rel], or None if no face was found."""
+    """image_rgb: (224, 224, 3) uint8, RGB. Returns (468, 3) float32."""
     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=image_rgb)
     result = landmarker.detect(mp_image)
 
@@ -128,6 +169,13 @@ def extract_landmarks(landmarker, image_rgb: np.ndarray):
 
 def run():
     print(f"Project root: {PROJECT_ROOT}")
+    if not MODEL_PATH.is_file():
+        raise SystemExit(
+            f"ERROR: MediaPipe task model not found at {MODEL_PATH}. Download face_landmarker.task first."
+        )
+
+    exact_map, name_to_paths, stem_map = build_image_lookup_table()
+
     manifest = load_manifest()
     print(f"Total images to process: {len(manifest)}")
 
@@ -144,11 +192,9 @@ def run():
 
     with mp_vision.FaceLandmarker.create_from_options(options) as landmarker:
         for _, row in tqdm(manifest.iterrows(), total=len(manifest), desc="Phase 7.1"):
-            filename = row["filename"]  # e.g. "MST-3/some_image.jpg"
+            filename = row["filename"]
 
-            # Suffix-aware, multi-root, extension-aware resolution -- see
-            # the PATH RESOLUTION note in the module docstring.
-            img_path, rule, root = resolve_image_path(filename)
+            img_path, rule, root = resolve_local_path(filename, exact_map, name_to_paths, stem_map)
 
             if img_path is None:
                 failures.append({"filename": filename, "reason": "file_not_found"})
@@ -177,8 +223,7 @@ def run():
     if not landmarks_list:
         raise SystemExit(
             "No landmarks extracted at all -- confirm you are running from the repo "
-            "root (path_resolver.py uses relative paths) and that "
-            "data/processed/images/ contains the batch folders."
+            "root and that ml_pipeline/data/processed/images/ contains the batch folders."
         )
 
     landmarks_array = np.stack(landmarks_list, axis=0)  # (N, 468, 3)
@@ -193,13 +238,6 @@ def run():
     if failures:
         print(pd.DataFrame(failures)["reason"].value_counts().to_string())
     print(f"Saved {LANDMARKS_PATH} with shape {landmarks_array.shape}")
-
-    print("\nRESOLUTION RULE USAGE (how each image's real file was located)")
-    print("-" * 62)
-    print(index_df["rule"].value_counts().to_string())
-    print("\nBATCH ROOT USAGE")
-    print("-" * 62)
-    print(index_df["root"].value_counts().to_string())
 
 
 if __name__ == "__main__":

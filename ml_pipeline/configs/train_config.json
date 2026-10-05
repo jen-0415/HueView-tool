@@ -1,0 +1,7 @@
+{
+    "lr_finetune": 0.00003,
+    "dropout": 0.5,
+    "unfreeze_last_n": 30,
+    "weight_decay": 0.0,
+    "run_tag": "final_candidate"
+}

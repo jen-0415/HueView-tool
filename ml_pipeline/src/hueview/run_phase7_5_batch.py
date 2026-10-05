@@ -12,32 +12,22 @@ Full Face vector" -- across the REAL full dataset, not a QA sample.
 
 Masks and per-region images are reconstructed from the compact label maps
 written by run_phase7_4_batch.py via regions.decode_label_map(), using the
-already-generated faces_ssr/ images (converted to RGB, matching the
+already-generated SSR images (converted to RGB, matching the
 convention the patches were originally built with).
 
-ACCURACY NOTE: decode_label_map() can only reconstruct STATUS_OK or
-STATUS_EMPTY per region -- the label map has no bits for "relaxed" vs
-"geometry_fallback" (see its own docstring: "If you need exact status
-replay, join against the routing log on filename"). This script does
-exactly that: it joins phase7_4_full_coverage_stats.csv (the real per-
-region status from the actual HSV filtering run) onto each reconstructed
-patch before routing, so the log's worst-status-per-configuration field is
-accurate rather than collapsed to OK/EMPTY. Usability (skip_unusable,
-is_usable) is unaffected either way -- that only ever depended on pixel
-counts, not the status label.
+Inputs:
+    ml_pipeline/data/processed/landmarks_index.csv
+    ml_pipeline/data/processed/label_maps/<filename, .png>
+    ml_pipeline/data/processed/images_ssr/<filename>
+    ml_pipeline/data/processed/phase7_4_full_coverage_stats.csv
 
-Input:
-    data/processed/landmarks_index.csv                -- filename universe
-    data/processed/label_maps/<filename, .png>        -- from 7.4
-    data/processed/faces_ssr/<filename>                -- from 7.2
-    data/processed/phase7_4_full_coverage_stats.csv    -- real per-region
-                                                           status, from 7.4
-
-Output:
-    results/phase7_routing_log.csv -- one row per image, from
-                                       RegionalConfigurationSelector.routing_record()
+Outputs:
+    results/phase7_routing_log.csv
+    ml_pipeline/data/processed/phase7_5_failures.csv
 """
 
+import os
+import re
 import sys
 from pathlib import Path
 from multiprocessing import Pool, cpu_count
@@ -50,51 +40,140 @@ from tqdm import tqdm
 # ------------------------------------------------------------ project root --
 
 
-def find_project_root(start: Path, marker: str = "data") -> Path:
+def find_project_root(start: Path, marker: str = "ml_pipeline") -> Path:
+    """Walk upward from `start` until a directory containing `marker` is found."""
     for candidate in [start] + list(start.parents):
         if (candidate / marker).is_dir():
             return candidate
+        if candidate.name == marker:
+            return candidate.parent
     return start
 
 
 PROJECT_ROOT = find_project_root(Path(__file__).resolve().parent)
-sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from ml_pipeline.src.hueview.regions import decode_label_map, REGION_ORDER  # noqa: E402
 from ml_pipeline.src.hueview.region_selector import RegionalConfigurationSelector  # noqa: E402
 
 # ---------------------------------------------------------------- config --
 
-INDEX_PATH = PROJECT_ROOT / "data" / "processed" / "landmarks_index.csv"
-LABEL_MAPS_ROOT = PROJECT_ROOT / "data" / "processed" / "label_maps"
-SSR_ROOT = PROJECT_ROOT / "data" / "processed" / "faces_ssr"
-STATS_PATH = PROJECT_ROOT / "data" / "processed" / "phase7_4_full_coverage_stats.csv"
-OUT_PATH = PROJECT_ROOT / "results" / "phase7_routing_log.csv"
-FAILURES_PATH = PROJECT_ROOT / "data" / "processed" / "phase7_5_failures.csv"
+DATA_PROCESSED = PROJECT_ROOT / "ml_pipeline" / "data" / "processed"
+INDEX_PATH = DATA_PROCESSED / "landmarks_index.csv"
+LABEL_MAPS_ROOT = DATA_PROCESSED / "label_maps"
+SSR_ROOT = DATA_PROCESSED / "images_ssr"
+STATS_PATH = DATA_PROCESSED / "phase7_4_full_coverage_stats.csv"
 
-LIMIT = None  # e.g. 50 to sanity-check before the full run
+OUT_PATH = PROJECT_ROOT / "results" / "phase7_routing_log.csv"
+FAILURES_PATH = DATA_PROCESSED / "phase7_5_failures.csv"
+
+LIMIT = None  # Process all entries from landmarks_index.csv
+
+# ----------------------------------------------------------- status lookup --
 
 
 def load_status_lookup() -> dict:
-    """{(filename, region): true_status} from the real Phase 7.4 run --
-    loaded once per process (main + each worker), not once per job."""
+    """{(filename, region): true_status} from the real Phase 7.4 run."""
+    if not STATS_PATH.is_file():
+        return {}
     df = pd.read_csv(STATS_PATH)
     return {(row.filename, row.region): row.status for row in df.itertuples()}
 
 
-STATUS_LOOKUP = load_status_lookup() if STATS_PATH.is_file() else {}
+STATUS_LOOKUP = load_status_lookup()
+
+# ---------------------------------------------------------- path resolvers --
+
+
+def get_path_variants(file_str: str) -> list[str]:
+    """Generates clean filename variants and swaps extensions (.png <-> .bmp <-> .jpg)."""
+    clean_str = re.sub(r"\s*\(\d+\)", "", file_str)
+    variants = [file_str, clean_str]
+
+    extended_variants = []
+    for var in variants:
+        p = Path(var)
+        extended_variants.append(var)
+        for ext in [".bmp", ".jpg", ".png", ".jpeg"]:
+            if p.suffix.lower() != ext:
+                extended_variants.append(str(p.with_suffix(ext)))
+
+    return list(dict.fromkeys(extended_variants))
+
+
+def resolve_ssr_path(filename: str) -> Path | None:
+    """Locates the SSR image across cohort directories and extension variants."""
+    str_file = str(filename).replace("\\", "/")
+    if "images/" in str_file:
+        str_file = str_file.split("images/")[-1]
+
+    variants = get_path_variants(str_file)
+
+    # Direct check under SSR_ROOT
+    for var in variants:
+        cand = SSR_ROOT / var
+        if cand.is_file():
+            return cand
+
+    # Priority cohort directories check
+    cohorts = ["processed", "v5_processed", "c1_processed", "c2_processed"]
+    for cohort in cohorts:
+        for var in variants:
+            cand = SSR_ROOT / cohort / var
+            if cand.is_file():
+                return cand
+
+    # Fallback recursive search by filename
+    bare_names = list(set(Path(v).name.lower() for v in variants))
+    for bare_name in bare_names:
+        matched = list(SSR_ROOT.rglob(bare_name))
+        if matched and matched[0].is_file():
+            return matched[0]
+
+    return None
+
+
+def resolve_label_map_path(filename: str) -> Path | None:
+    """Locates the encoded label map PNG generated by Phase 7.4."""
+    str_file = str(filename).replace("\\", "/")
+    if "images/" in str_file:
+        str_file = str_file.split("images/")[-1]
+
+    variants = get_path_variants(str_file)
+
+    for var in variants:
+        png_var = str(Path(var).with_suffix(".png"))
+        cand = LABEL_MAPS_ROOT / png_var
+        if cand.is_file():
+            return cand
+
+    # Fallback search by bare filename in LABEL_MAPS_ROOT
+    bare_names = list(set(Path(v).with_suffix(".png").name.lower() for v in variants))
+    for bare_name in bare_names:
+        matched = list(LABEL_MAPS_ROOT.rglob(bare_name))
+        if matched and matched[0].is_file():
+            return matched[0]
+
+    return None
+
 
 # --------------------------------------------------------------- worker --
 
 
 def process_one(filename: str):
-    label_path = LABEL_MAPS_ROOT / Path(filename).with_suffix(".png")
-    ssr_path = SSR_ROOT / filename
+    label_path = resolve_label_map_path(filename)
+    ssr_path = resolve_ssr_path(filename)
+
+    if label_path is None or ssr_path is None:
+        return (filename, None, "label_map_or_ssr_missing")
 
     label = cv2.imread(str(label_path), cv2.IMREAD_UNCHANGED)
     ssr_bgr = cv2.imread(str(ssr_path))
+
     if label is None or ssr_bgr is None:
-        return (filename, None, "label_map_or_ssr_missing")
+        return (filename, None, "label_map_or_ssr_unreadable")
 
     ssr_rgb = cv2.cvtColor(ssr_bgr, cv2.COLOR_BGR2RGB)
     patches = decode_label_map(label, ssr_rgb)
@@ -133,7 +212,11 @@ def run():
     rows = []
     failures = []
     with Pool(processes=cpu_count()) as pool:
-        for filename, row, error in tqdm(pool.imap_unordered(process_one, filenames), total=len(filenames)):
+        for filename, row, error in tqdm(
+            pool.imap_unordered(process_one, filenames),
+            total=len(filenames),
+            desc="Phase 7.5",
+        ):
             if error is not None:
                 failures.append({"filename": filename, "reason": error})
             else:

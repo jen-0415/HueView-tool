@@ -35,15 +35,14 @@ from tensorflow.keras import layers
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 PATCH_DIR = ROOT / "data/processed/regions"    # JPG patches from Phase 7.4
-SPLIT_DIR = ROOT / "data/processed"            # train.csv / val.csv / test.csv
-FACE_DIR = SPLIT_DIR / "images/processed"      # 224×224 full faces
+SPLIT_DIR = ROOT / "data/processed"            # train_verified.csv / val_verified.csv
+FACE_DIR = SPLIT_DIR / "images_ssr"            # SSR images (full faces)
 MODEL_DIR = ROOT / "models"
 RESULT_DIR = ROOT / "results"
-CONFIG_DIR = ROOT / "config"
+CONFIG_DIR = ROOT / "configs"
 
 REGIONS = ["forehead", "left_cheek", "right_cheek",
            "jawline", "nose_bridge", "full_face"]
-FACE_SOURCE_DIRS = ["processed", "c1_processed", "c2_processed", "v5_processed"]
 
 FNAME_COL = "filename"
 LABEL_COL = "SCC_label"
@@ -52,7 +51,7 @@ N_CLASSES = 6
 
 
 def patch_paths(region: str, fname: str):
-    """Phase 7.4 saved JPGs at: regions/MST-X/<filename>_<region>.jpg"""
+    """Phase 7.4 saved JPGs at: regions/MST-X/<stem>_<region>.jpg"""
     parts = pathlib.Path(fname)
     folder = parts.parent.name
     stem = parts.stem
@@ -75,11 +74,11 @@ def patch_paths(region: str, fname: str):
 
 
 def load_patch(region: str, fname: str):
-    """Load regional JPG, return (uint8 RGB 224×224, bool mask)."""
+    """Load regional JPG, return (uint8 RGB 224x224, bool mask)."""
     if region == "full_face":
-        # full_face uses the Phase 3 full faces, not a regional patch
+        # full_face uses the SSR full face images
         return load_face(fname), None
-    
+
     p_img, _ = patch_paths(region, fname)
     bgr = cv2.imread(str(p_img))
     if bgr is None:
@@ -93,30 +92,34 @@ def load_patch(region: str, fname: str):
 
 
 def load_face(fname: str) -> np.ndarray:
-    """Load full 224×224 face. Faces are split across four source folders."""
-    stem = pathlib.Path(fname).stem
-    folder = pathlib.Path(fname).parent.name
-    for src in FACE_SOURCE_DIRS:
-        for ext in (".jpg", ".png"):
-            p = SPLIT_DIR / "images" / src / folder / f"{stem}{ext}"
-            if p.exists():
-                bgr = cv2.imread(str(p))
-                img = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-                if img.shape[:2] != (IMG_SIZE, IMG_SIZE):
-                    img = cv2.resize(img, (IMG_SIZE, IMG_SIZE), interpolation=cv2.INTER_AREA)
-                return img.astype(np.uint8)
-    raise FileNotFoundError(f"face not found: {stem}")
+    """Load SSR full face from images_ssr/MST-X/<stem>.jpg"""
+    p0 = pathlib.Path(fname)
+    folder = p0.parent.name
+    stem = p0.stem
+    for ext in (".jpg", ".png"):
+        p = FACE_DIR / folder / f"{stem}{ext}"
+        if p.exists():
+            bgr = cv2.imread(str(p))
+            img = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+            if img.shape[:2] != (IMG_SIZE, IMG_SIZE):
+                img = cv2.resize(img, (IMG_SIZE, IMG_SIZE), interpolation=cv2.INTER_AREA)
+            return img.astype(np.uint8)
+    raise FileNotFoundError(f"face not found: {fname} in {FACE_DIR}")
 
 # -------------------------- END ADAPTER ----------------------------------
 
 
 # Baseline's recipe. Phase 6.4 writes this; Phase 10 only reads it.
+# NOTE: added optional "run_tag" — not a training hyperparameter. If set in
+# train_config.json (e.g. "expA"), all output filenames for this run get a
+# "_<run_tag>" suffix so experiments never overwrite the control run's files.
 DEFAULT_CFG = {
     "seed": 42, "batch_size": 32,
     "lr_head": 1e-3, "lr_finetune": 1e-5,
     "epochs_head": 15, "epochs_finetune": 25,
     "es_patience": 5, "dropout": 0.3,
     "unfreeze_last_n": 30, "use_class_weight": True,
+    "weight_decay": 1e-4, "run_tag": "",
 }
 
 
@@ -128,6 +131,13 @@ def load_cfg() -> dict:
     else:
         print(f"[warn] {p} not found — using defaults. These MUST match Phase 6.4.")
     return cfg
+
+
+def tag_suffix(cfg: dict) -> str:
+    """'_<run_tag>' if a run_tag is set, else '' (keeps control-run filenames
+    unchanged so nothing here breaks your existing outputs)."""
+    tag = cfg.get("run_tag", "")
+    return f"_{tag}" if tag else ""
 
 
 # ---------------------------------------------------------------- CIELAB
@@ -149,7 +159,14 @@ def cielab_mean(patch_rgb: np.ndarray, mask: np.ndarray = None) -> np.ndarray:
 def cache_lab(region: str, df: pd.DataFrame, tag: str) -> np.ndarray:
     """Precompute mean LAB per image once. Geometric augmentation (flip,
     small rotation) leaves the mean over skin pixels essentially unchanged,
-    so caching is safe and saves recomputing it every epoch."""
+    so caching is safe and saves recomputing it every epoch.
+
+    NOTE: this cache is keyed by region + split tag only, not by run_tag —
+    the raw LAB pixel values don't change when you tune lr/dropout/unfreeze,
+    so it's safe (and much faster) to reuse across experiments A/B/C/E.
+    It DOES need to be distinct from the --ablate-lab run in principle, but
+    --ablate-lab zeroes the vector after loading the cache (see zero_lab in
+    HueViewSeq), so the cached file itself never needs to differ."""
     out = RESULT_DIR / f"lab_cache_{region}_{tag}.npy"
     if out.exists():
         return np.load(out)
@@ -232,9 +249,22 @@ def build_model(cfg, lab_dim=3):
     return keras.Model([img_in, lab_in], out), base
 
 
-def compile_model(model, lr):
-    model.compile(optimizer=keras.optimizers.Adam(lr),
-                  loss="categorical_crossentropy", metrics=["accuracy"])
+def compile_model(model, lr, weight_decay=0.0):
+    if weight_decay > 0:
+        optimizer = keras.optimizers.AdamW(
+            learning_rate=lr,
+            weight_decay=weight_decay
+        )
+    else:
+        optimizer = keras.optimizers.Adam(
+            learning_rate=lr
+        )
+
+    model.compile(
+        optimizer=optimizer,
+        loss="categorical_crossentropy",
+        metrics=["accuracy"]
+    )
 
 
 # ------------------------------------------------------------------ run
@@ -249,7 +279,9 @@ def train_region(region, cfg, train_df, val_df, smoke=False, zero_lab=False):
 
     scaler = StandardScaler().fit(lab_tr)          # fit on TRAIN ONLY
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    joblib.dump(scaler, MODEL_DIR / f"lab_scaler_{region}.pkl")
+
+    suffix = tag_suffix(cfg)
+    joblib.dump(scaler, MODEL_DIR / f"lab_scaler_{region}{suffix}.pkl")
 
     tr = HueViewSeq(train_df, region, lab_tr, scaler, cfg["batch_size"],
                     shuffle=True, do_augment=not smoke, seed=cfg["seed"],
@@ -264,16 +296,20 @@ def train_region(region, cfg, train_df, val_df, smoke=False, zero_lab=False):
         cw = dict(enumerate(w))
 
     model, base = build_model(cfg)
-    ckpt = MODEL_DIR / f"hueview_{region}.h5"
+
+    # --- FIX: filenames now carry the run_tag suffix so experiment runs
+    # (expA, expB, ...) never collide with or overwrite the control run,
+    # or each other. Default run_tag="" reproduces the original filenames.
+    ckpt = MODEL_DIR / f"hueview_{region}{suffix}.h5"
     cbs = [
         keras.callbacks.EarlyStopping("val_loss", patience=cfg["es_patience"],
                                       restore_best_weights=True),
-        keras.callbacks.ModelCheckpoint(ckpt, monitor="val_loss", save_best_only=True),
-        keras.callbacks.CSVLogger(RESULT_DIR / f"trainlog_{region}.csv"),
+        keras.callbacks.ModelCheckpoint(ckpt, monitor="val_accuracy", mode="max", save_best_only=True),
+        keras.callbacks.CSVLogger(RESULT_DIR / f"trainlog_{region}{suffix}.csv"),
     ]
 
     # stage 1 — frozen backbone
-    compile_model(model, cfg["lr_head"])
+    compile_model(model, cfg["lr_head"], cfg["weight_decay"])
     h1 = model.fit(tr, validation_data=va, epochs=1 if smoke else cfg["epochs_head"],
                    class_weight=cw, callbacks=cbs, verbose=1)
 
@@ -284,17 +320,28 @@ def train_region(region, cfg, train_df, val_df, smoke=False, zero_lab=False):
     for layer in base.layers:                      # keep BN frozen
         if isinstance(layer, layers.BatchNormalization):
             layer.trainable = False
-    compile_model(model, cfg["lr_finetune"])
+    compile_model(model, cfg["lr_finetune"], cfg["weight_decay"])
     h2 = model.fit(tr, validation_data=va, epochs=50 if smoke else cfg["epochs_finetune"],
                    class_weight=cw, callbacks=cbs, verbose=1)
 
-    model.save(ckpt)
+    # --- FIX: removed the unconditional `model.save(ckpt)` that used to sit
+    # here. ModelCheckpoint(monitor="val_loss", save_best_only=True) already
+    # wrote the best-val-loss weights to `ckpt` during training. Saving again
+    # here would unconditionally overwrite that with the LAST epoch's weights
+    # (which EarlyStopping's restore_best_weights may or may not match),
+    # silently swapping in a worse model for evaluation. `ckpt` on disk is
+    # now guaranteed to be the best-val-loss checkpoint from this run.
     hist = {k: h1.history.get(k, []) + h2.history.get(k, []) for k in h2.history}
-    (RESULT_DIR / f"history_{region}.json").write_text(json.dumps(hist))
-    best = float(np.min(hist["val_loss"]))
-    print(f"[done] {region}: best val_loss={best:.4f}  "
-          f"best val_acc={max(hist['val_accuracy']):.4f}")
-    return best
+    (RESULT_DIR / f"history_{region}{suffix}.json").write_text(json.dumps(hist))
+    best_loss = float(np.min(hist["val_loss"]))
+    best_acc = float(max(hist["val_accuracy"]))
+    print(
+        f"[done] {region}{suffix}: "
+        f"best val_acc={best_acc:.4f}  "
+        f"best val_loss={best_loss:.4f}  "
+        f"saved -> {ckpt.name}"
+    )
+    return best_acc 
 
 
 def main():
@@ -308,6 +355,8 @@ def main():
     a = ap.parse_args()
 
     cfg = load_cfg()
+    if cfg.get("run_tag"):
+        print(f"[cfg] run_tag={cfg['run_tag']!r} — outputs suffixed, control run untouched")
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
     train_df = pd.read_csv(SPLIT_DIR / "train_verified.csv")
     val_df = pd.read_csv(SPLIT_DIR / "val_verified.csv")
@@ -323,8 +372,9 @@ def main():
     for r in a.regions:
         best = train_region(r, cfg, train_df, val_df,
                             smoke=a.smoke, zero_lab=a.ablate_lab)
-        rows.append({"region": r, "best_val_loss": best})
-    pd.DataFrame(rows).to_csv(RESULT_DIR / "training_log.csv", index=False)
+        rows.append({"region": r, "best_val_accuracy": best})
+    suffix = tag_suffix(cfg)
+    pd.DataFrame(rows).to_csv(RESULT_DIR / f"training_log{suffix}.csv", index=False)
 
 
 if __name__ == "__main__":
