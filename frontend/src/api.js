@@ -1,98 +1,209 @@
 // The only file that talks to the backend.
-// While VITE_USE_MOCK=true nothing here touches the network.
+//
+// While VITE_USE_MOCK=true, nothing here touches the network.
 
 import { MOCK_DETECT, MOCK_RESULT } from "./mockData";
-import { STAGES } from "./constants";
 
-const BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
-export const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
+const BASE =
+  import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+export const USE_MOCK =
+  import.meta.env.VITE_USE_MOCK === "true";
 
-/* ---------------------------------------------------------------- */
-/* 1. Detect a face and return the crop preview                      */
-/* ---------------------------------------------------------------- */
+const sleep = (ms) =>
+  new Promise((r) => setTimeout(r, ms));
+
+/* ----------------------------------------------------------------
+   1. Detect a face and return the crop preview
+   ---------------------------------------------------------------- */
+
 export async function detect(file) {
+  // Mock mode
   if (USE_MOCK) {
     await sleep(700);
     return MOCK_DETECT;
   }
 
+  // Real backend
   const body = new FormData();
   body.append("image", file);
 
-  const res = await fetch(`${BASE}/api/detect`, { method: "POST", body });
+  const res = await fetch(`${BASE}/api/detect`, {
+    method: "POST",
+    body,
+  });
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail?.message || "Face detection failed.");
+
+    throw new Error(
+      err?.detail?.message || "Face detection failed."
+    );
   }
+
   return res.json();
 }
 
-/* ---------------------------------------------------------------- */
-/* 2. Run both pipelines, streaming stage progress                   */
-/*    onStage({ key, status, ms })  -> fired six times               */
-/*    onResult(payload)             -> fired once at the end         */
-/*                                                                   */
-/*    Returns a cancel() function. Call it when leaving the          */
-/*    analyzing screen (browser Back, reset) so the SSE connection   */
-/*    closes and no callbacks fire after the user has moved on.      */
-/* ---------------------------------------------------------------- */
-export function analyze(file, onStage, onResult, onError) {
-  if (USE_MOCK) return mockAnalyze(onStage, onResult);
+/* ----------------------------------------------------------------
+   2. Run both pipelines, streaming stage progress
 
+   onStage({ key, status, ms })
+   onResult(payload)
+
+   Returns a cancel() function.
+   ---------------------------------------------------------------- */
+
+export function analyze(
+  file,
+  onStage,
+  onResult,
+  onError
+) {
+  // Mock mode
+  if (USE_MOCK) {
+    return mockAnalyze(onStage, onResult);
+  }
+
+  // Real backend
   let cancelled = false;
   let es = null;
 
   const body = new FormData();
   body.append("image", file);
 
-  fetch(`${BASE}/api/analyze`, { method: "POST", body })
-    .then((r) => r.json())
+  fetch(`${BASE}/api/analyze`, {
+    method: "POST",
+    body,
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+
+        throw new Error(
+          err?.detail?.message || "Analysis request failed."
+        );
+      }
+
+      return res.json();
+    })
     .then(({ job_id }) => {
-      if (cancelled) return; // user left before the job id came back
+      if (cancelled) return;
 
-      es = new EventSource(`${BASE}/api/analyze/${job_id}/events`);
+      // Open Server-Sent Events connection
+      es = new EventSource(
+        `${BASE}/api/analyze/${job_id}/events`
+      );
 
+      // Analysis stage updates
       es.addEventListener("stage", (e) => {
-        if (!cancelled) onStage(JSON.parse(e.data));
+        if (cancelled) return;
+
+        try {
+          onStage(JSON.parse(e.data));
+        } catch {
+          console.error("Invalid stage event:", e.data);
+        }
       });
+
+      // Final analysis result
       es.addEventListener("result", (e) => {
-        if (!cancelled) onResult(JSON.parse(e.data).data);
+        if (cancelled) return;
+
+        try {
+          const payload = JSON.parse(e.data);
+          onResult(payload.data);
+        } catch (err) {
+          onError(
+            new Error("Invalid analysis result received.")
+          );
+        }
+
         es.close();
+        es = null;
       });
+
+      // SSE connection error
       es.addEventListener("error", () => {
         if (!cancelled) {
-          onError(new Error("Analysis failed. Check that the API is running."));
+          onError(
+            new Error(
+              "Analysis failed. Check that the API is running."
+            )
+          );
         }
-        es.close();
+
+        es?.close();
+        es = null;
       });
     })
-    .catch(() => {
-      if (!cancelled) onError(new Error("Could not reach the API."));
+    .catch((err) => {
+      if (!cancelled) {
+        onError(
+          new Error(
+            err.message || "Could not reach the API."
+          )
+        );
+      }
     });
 
+  // Cancel function
   return () => {
     cancelled = true;
     es?.close();
+    es = null;
   };
 }
 
-/* Fake stream so the UI is fully demo-able with no backend. */
+/* ----------------------------------------------------------------
+   Mock analysis
+   ---------------------------------------------------------------- */
+
 function mockAnalyze(onStage, onResult) {
   let cancelled = false;
 
+  const stages = [
+    "detect",
+    "crop",
+    "normalize",
+    "extract",
+    "predict",
+    "compare",
+  ];
+
+  const timings = [
+    420,
+    560,
+    900,
+    1100,
+    380,
+    440,
+  ];
+
   (async () => {
-    const timings = [420, 560, 900, 1100, 380, 440];
-    for (let i = 0; i < STAGES.length; i++) {
+    for (let i = 0; i < stages.length; i++) {
       if (cancelled) return;
-      onStage({ key: STAGES[i].key, status: "running" });
+
+      onStage({
+        key: stages[i],
+        status: "running",
+      });
+
       await sleep(timings[i]);
+
       if (cancelled) return;
-      onStage({ key: STAGES[i].key, status: "done", ms: timings[i] });
+
+      onStage({
+        key: stages[i],
+        status: "done",
+        ms: timings[i],
+      });
     }
+
     await sleep(300);
-    if (!cancelled) onResult(MOCK_RESULT);
+
+    if (!cancelled) {
+      onResult(MOCK_RESULT);
+    }
   })();
 
   return () => {
