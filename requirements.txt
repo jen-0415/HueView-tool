@@ -1,0 +1,14 @@
+facenet_pytorch
+fastapi
+joblib
+matplotlib
+mediapipe
+numpy
+opencv_contrib_python
+opencv_python
+pandas
+Pillow
+scikit_learn
+scikit-image==0.26.0
+tensorflow
+tqdm
