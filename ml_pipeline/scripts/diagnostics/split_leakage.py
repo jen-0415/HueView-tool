@@ -1,5 +1,5 @@
 # Throwaway diagnostic -- not part of the pipeline, safe to delete after use.
-# Run from the HueView-tool repo root.
+# Run from ml_pipeline/:  python scripts/diagnostics/split_leakage.py
 
 from collections import Counter
 from pathlib import Path

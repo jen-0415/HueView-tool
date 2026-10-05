@@ -11,7 +11,7 @@ Rows missing even one file are dropped. This catches the Windows
 at a time.
 
 Run:
-    python3 verify_splits.py
+    python3 scripts/diagnostics/verify_splits.py   (edit ROOT below first)
 
 Produces:
     train_verified.csv / val_verified.csv / test_verified.csv

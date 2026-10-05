@@ -2,7 +2,7 @@
 Fixed verification script — correctly finds ml_pipeline directory.
 
 Usage:
-    python verify_phase10_FIXED.py
+    python scripts/verify_phase10.py
     (Run from anywhere in the project, it will find ml_pipeline/)
 """
 

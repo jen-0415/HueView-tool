@@ -1,5 +1,6 @@
 # Throwaway diagnostic -- not part of the pipeline, safe to delete after use.
-# Run from the HueView-tool repo root. This may take a few minutes -- it
+# Run from ml_pipeline/:  python scripts/diagnostics/verify_fallback_matches.py
+# This may take a few minutes -- it
 # opens every fallback-recovered image, same as resolve_manifest.py does.
 
 from pathlib import Path

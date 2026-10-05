@@ -1,5 +1,5 @@
 # Throwaway diagnostic -- not part of the pipeline, safe to delete after use.
-# Run from the HueView-tool repo root, same as before.
+# Run from ml_pipeline/:  python scripts/diagnostics/check_unreadable_files.py
 
 from pathlib import Path
 

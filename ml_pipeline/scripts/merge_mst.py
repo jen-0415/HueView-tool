@@ -1,8 +1,8 @@
 from pathlib import Path
 import shutil
 
-# Correct path from HueView-tool root
-base_dir = Path("ml_pipeline/data/processed/images")
+# Run from ml_pipeline/:  python scripts/merge_mst.py
+base_dir = Path("data/processed/images")
 
 # Folders containing the MST folders
 source_folders = [

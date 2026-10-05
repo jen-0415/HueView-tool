@@ -48,7 +48,7 @@ image-right eye. Verified against the official groups:
 is the smallest polygon containing every point, so it necessarily stretches
 from one face edge across to the opposite eye and fills in everything
 between. Mirrored on the other side, both cheeks end up covering most of the
-face — visible as the two overlapping wedges in `region_reference.png`.
+face — visible as the two overlapping wedges in `figures/region_reference.png`.
 
 ### Bug 2 — nose points pulled into the cheeks
 
