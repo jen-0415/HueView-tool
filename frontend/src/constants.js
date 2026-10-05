@@ -10,17 +10,6 @@ export const SCC = [
 
 export const sccLabel = (id) => SCC.find((s) => s.id === id)?.label ?? id;
 
-// The six pipeline stages shown on the analyzing screen.
-// `key` must match the SSE event key sent by the backend.
-export const STAGES = [
-  { key: "detect", label: "Face detection" },
-  { key: "ssr", label: "Illumination normalization (SSR, sigma=80)" },
-  { key: "segment", label: "Regional facial segmentation" },
-  { key: "cnn", label: "EfficientNetB0 feature extraction" },
-  { key: "lab", label: "RGB to CIELAB conversion" },
-  { key: "undertone", label: "Hue-based undertone estimation" },
-];
-
 // Undertone rules, one per pipeline. Keep these in sync with the manuscript —
 // the backend is the source of truth, this is for display only.
 export const UNDERTONE_RULES = {
