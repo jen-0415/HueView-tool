@@ -132,7 +132,7 @@ from tensorflow.keras import layers
 # ---------------------------- ADAPTER ------------------------------------
 ROOT = pathlib.Path(__file__).resolve().parents[2]          # -> ml_pipeline/
 
-SPLIT_DIR = ROOT / "data/processed"            # train_verified.csv / val_verified.csv
+SPLIT_DIR = ROOT / "data/processed"            # train_hueview_usable.csv / val_hueview_usable.csv
 FACE_DIR = SPLIT_DIR / "images_ssr"            # SSR faces (Phase 7.2)
 LABEL_MAP_DIR = SPLIT_DIR / "label_maps"       # Phase 7.4 packed masks
 COVERAGE_CSV = SPLIT_DIR / "phase7_4_full_coverage_stats.csv"
@@ -637,8 +637,8 @@ def main():
 
     print(f"[cfg] regions={REGION_ORDER} (+ full_face, lab_dim 15)")
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
-    train_df = pd.read_csv(SPLIT_DIR / "train_verified.csv")
-    val_df = pd.read_csv(SPLIT_DIR / "val_verified.csv")
+    train_df = pd.read_csv(SPLIT_DIR / "train_hueview_usable.csv")
+    val_df = pd.read_csv(SPLIT_DIR / "val_hueview_usable.csv")
     print(f"train={len(train_df)}  val={len(val_df)}  tf={tf.__version__}")
 
     if a.cache_lab:
