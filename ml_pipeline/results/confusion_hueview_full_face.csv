@@ -1,7 +1,7 @@
 ,pred_SCC-1,pred_SCC-2,pred_SCC-3,pred_SCC-4,pred_SCC-5,pred_SCC-6
-true_SCC-1,434,233,2,1,0,0
-true_SCC-2,352,444,50,5,1,0
-true_SCC-3,15,24,115,29,17,0
-true_SCC-4,0,0,22,214,136,21
-true_SCC-5,0,0,39,165,510,41
-true_SCC-6,0,0,11,8,81,24
+true_SCC-1,478,189,3,0,0,0
+true_SCC-2,427,605,64,1,3,2
+true_SCC-3,13,48,163,37,42,0
+true_SCC-4,0,0,54,311,366,10
+true_SCC-5,0,0,50,167,1172,44
+true_SCC-6,0,0,16,2,185,36

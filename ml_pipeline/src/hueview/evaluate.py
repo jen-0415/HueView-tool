@@ -1,37 +1,61 @@
 """
-PHASE 11 — Evaluation.
+PHASE 11 — Evaluation.  [aligned with train.py MANUSCRIPT-ALIGNED REVISION v3]
 
-Runs Baseline and all six HueView configurations over the frozen test split in
-ONE pass, then writes:
+Runs Baseline and all six HueView configurations over the frozen *usable* test
+split in ONE pass, then writes:
 
     results/classification_results_record.csv   <- Table 10 (per-image, both models)
     results/metrics_overall.csv                 <- Table 15 (side-by-side)
+    results/perclass_baseline.csv / perclass_hueview_<primary>.csv
     results/metrics_by_illumination.csv         <- SOP1 / SOP2
     results/metrics_by_region.csv               <- SOP3
     results/confusion_baseline.csv              <- Table 11
     results/confusion_hueview_<region>.csv      <- Table 12
-    results/metrics_<model>.json
+    results/model_provenance.csv                <- which model files were evaluated
+    results/metrics_summary.json
 
 Phase 12 should read ONLY the per-image record and never re-run a model.
 
-    python evaluate.py
-    python evaluate.py --primary full_face
+Run from HueView-tool/ (train.py uses relative imports, so -m is required):
 
-Aligned with train.py (sigma=30 SSR run):
-  * HueView inputs come from train.load_patch -> regions/ patches and
-    images_ssr/ full faces (the same pipeline the models were trained on).
-  * Baseline still reads the ORIGINAL (non-SSR) faces, because that is what
-    Phase 6 trained it on. Do not point it at images_ssr/.
-  * Test LAB vectors are recomputed every run (old lab_cache_*_test.npy files
-    from the sigma=80 run are stale and are deleted first).
-  * Leak check uses the same *_verified.csv files train.py trained on.
+    python -m ml_pipeline.src.hueview.evaluate
+    python -m ml_pipeline.src.hueview.evaluate --primary full_face --run-tag final
+
+How this matches train.py v3 — the HueView path reuses train.py's OWN code, so
+test inputs are built exactly the way training inputs were:
+  * Images: train.HueViewSeq (no shuffle, no augmentation) -> Phase 7.4 label-map
+    skin masks, skin-masked regional patches, unmasked SSR face for full_face.
+  * CIELAB: train.cache_lab -> skimage rgb2lab over the real skin mask;
+    3-D per region, 15-D for full_face (REGION_ORDER), within-face imputation.
+  * Images with no usable region are imputed with the TRAIN-split mean, via
+    train.impute_from_train — the same fallback validation used.
+  * Scaler: lab_scaler_<region>_<run_tag>.pkl, fit on TRAIN in train.py.
+  * Models: hueview_<region>_<run_tag>.h5 (ModelCheckpoint best val_accuracy).
+
+Baseline:
+  * Reads the ORIGINAL (non-SSR) faces under data/processed/images/, because
+    that is what Phase 6 trained it on. Do not point it at images_ssr/.
+
+Checks before anything runs:
+  * Every model/scaler exists; their paths, dates and hashes are recorded.
+  * No test image is in HueView's or Baseline's train/val splits.
+  * test_hueview_usable.csv is a subset of baseline_rgb_test.csv, so both
+    models are scored on identical images (required for paired McNemar).
+
+Undertone: hue angle per facial region from the RAW (un-imputed) CIELAB mean;
+majority vote across the FIVE facial regions only (full_face excluded), and a
+region with no usable skin pixels does not vote.
+
+NOTE: this overwrites results/ outputs. Back up the old folder first if you
+still need the previous numbers.
 """
 from __future__ import annotations
 
 import argparse
+import datetime
+import hashlib
 import json
 import pathlib
-import sys
 
 import cv2
 import joblib
@@ -41,49 +65,158 @@ from sklearn.metrics import (accuracy_score, confusion_matrix, f1_score,
                              precision_score, recall_score)
 from tensorflow import keras
 
-# Import train.py whether this is run as a module or as a plain script
-try:
-    from ml_pipeline.src.hueview.train import (FNAME_COL, IMG_SIZE, LABEL_COL,
-                                               MODEL_DIR, N_CLASSES, REGIONS,
-                                               RESULT_DIR, SPLIT_DIR,
-                                               cielab_mean, load_patch)
-except ModuleNotFoundError:
-    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-    from train import (FNAME_COL, IMG_SIZE, LABEL_COL, MODEL_DIR, N_CLASSES,
-                       REGIONS, RESULT_DIR, SPLIT_DIR, cielab_mean, load_patch)
+from .train import (FNAME_COL, IMG_SIZE, LABEL_COL, MODEL_DIR, N_CLASSES,
+                    REGION_ORDER, REGIONS, RESULT_DIR, SPLIT_DIR, HueViewSeq,
+                    _fname_rel, cache_lab, impute_from_train)
 
 LABELS = list(range(1, N_CLASSES + 1))          # SCC-1 .. SCC-6
 BATCH = 32
 
+# Undertone majority vote: the five facial regions only (manuscript Stage 6)
+VOTE_REGIONS = list(REGION_ORDER)
+
 # ---------------------------- ADAPTER ------------------------------------
-# Baseline only: original (non-SSR) faces, as used in Phase 6.
-BASELINE_FACE_DIRS = ["processed", "c1_processed", "c2_processed", "v5_processed"]
+# HueView splits — the SAME files train.py trained on
+TEST_CSV = SPLIT_DIR / "test_hueview_usable.csv"
+TRAIN_CSV = SPLIT_DIR / "train_hueview_usable.csv"
+VAL_CSV = SPLIT_DIR / "val_hueview_usable.csv"
+
+# Baseline splits — what Phase 6 trained the Baseline on
+BASELINE_TRAIN_CSV = SPLIT_DIR / "baseline_rgb_train.csv"
+BASELINE_VAL_CSV = SPLIT_DIR / "baseline_rgb_val.csv"
+BASELINE_TEST_CSV = SPLIT_DIR / "baseline_rgb_test.csv"
+
+# Baseline model: original (non-SSR) faces, as used in Phase 6
 BASELINE_H5 = MODEL_DIR / "baseline_effnet.h5"
 BASELINE_INPUTS = ("image", "rgb_features")     # rename if your Phase 6.2 inputs differ
-TEST_CSV = SPLIT_DIR / "test_verified.csv"
-TRAIN_CSV = SPLIT_DIR / "train_verified.csv"    # same files train.py used
-VAL_CSV = SPLIT_DIR / "val_verified.csv"
+BASELINE_FACE_DIR = SPLIT_DIR / "images"        # images/MST-X/<file>
+RGB_COLS = ("r_mean", "g_mean", "b_mean")       # in baseline_rgb_*.csv, scaled 0..1
+RGB_TOL = 0.02                                  # max |image mean - CSV mean| per channel
+
+# filename in the split CSV  ->  verified file on disk; filled by resolve_baseline_faces()
+BASELINE_PATHS: dict[str, pathlib.Path] = {}
+# filename -> (r, g, b) means recorded by Phase 6 in baseline_rgb_test.csv
+BASELINE_RGB: dict[str, np.ndarray] = {}
+
+
+def _read_face(p: pathlib.Path):
+    bgr = cv2.imread(str(p))
+    if bgr is None:
+        return None
+    img = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+    if img.shape[:2] != (IMG_SIZE, IMG_SIZE):
+        img = cv2.resize(img, (IMG_SIZE, IMG_SIZE), interpolation=cv2.INTER_AREA)
+    return img.astype(np.uint8)
+
+
+def _candidates(fname: str):
+    """Possible on-disk names. On disk a ' (2)' copy was renamed to '_1'
+    (e.g. 'X (2).jpg' -> 'X_1.jpg'), but the split CSVs kept ' (2)'."""
+    rel = _fname_rel(fname)
+    stems = [rel.stem]
+    if rel.stem.endswith(" (2)"):
+        stems.append(rel.stem[:-len(" (2)")] + "_1")
+    for stem in stems:
+        for ext in (".jpg", ".png", ".jpeg", ".bmp"):
+            p = BASELINE_FACE_DIR / rel.parent / f"{stem}{ext}"
+            if p.is_file():
+                yield p
+
+
+def resolve_baseline_faces(test: pd.DataFrame):
+    """Map every test filename to its original face BEFORE any model runs.
+
+    Name matching alone is not trusted: each candidate's mean RGB must match
+    the r/g/b means Phase 6 recorded for that exact filename, so a renamed
+    '(2)' copy can never be swapped with its sibling image.
+    """
+    b = pd.read_csv(BASELINE_TEST_CSV)
+    assert set(RGB_COLS) <= set(b.columns), f"{BASELINE_TEST_CSV.name} lacks {RGB_COLS}"
+    BASELINE_RGB.update({f: np.array(v, np.float32)
+                         for f, v in zip(b[FNAME_COL], b[list(RGB_COLS)].to_numpy())})
+
+    # A recorded RGB triple shared by two different filenames is not a usable
+    # fingerprint: Phase 6 wrote one image's means under both names (seen for
+    # 'MST-7/0800_0_0_0_01.jpg' and its ' (2)' sibling).
+    rgb_key = b[list(RGB_COLS)].round(7).astype(str).agg("|".join, axis=1)
+    shared = set(b.loc[rgb_key.duplicated(keep=False), FNAME_COL])
+
+    not_found, mismatched, exceptions, renamed, worst = [], [], [], 0, 0.0
+    for f in test[FNAME_COL]:
+        want = BASELINE_RGB[f]
+        best, best_d = None, np.inf
+        for p in _candidates(f):
+            img = _read_face(p)
+            if img is None:
+                continue
+            d = float(np.abs(img.reshape(-1, 3).mean(0) / 255.0 - want).max())
+            if d < best_d:
+                best, best_d = p, d
+        if best is None:
+            not_found.append(f)
+        elif best_d > RGB_TOL:
+            exact = best.stem == _fname_rel(f).stem
+            if f in shared and exact:
+                # The CSV record can't arbitrate; use the file with the exact
+                # name — the same image HueView reads for this row.
+                BASELINE_PATHS[f] = best
+                exceptions.append({"filename": f, "used_file": str(best),
+                                   "max_rgb_diff": round(best_d, 4),
+                                   "reason": "Phase 6 RGB record duplicated across "
+                                             "filenames; exact-name file used"})
+            else:
+                mismatched.append((f, best.name, best_d))
+        else:
+            BASELINE_PATHS[f] = best
+            worst = max(worst, best_d)
+            renamed += best.stem != _fname_rel(f).stem
+
+    if exceptions:
+        pd.DataFrame(exceptions).to_csv(RESULT_DIR / "baseline_rgb_exceptions.csv",
+                                        index=False)
+        for e in exceptions:
+            print(f"[check] EXCEPTION (logged): {e['filename']} -> "
+                  f"{pathlib.Path(e['used_file']).name} (max diff {e['max_rgb_diff']}); "
+                  f"its RGB record is shared with another filename")
+
+    if not_found or mismatched:
+        for f in not_found[:5]:
+            print(f"[check] NOT FOUND: {f}")
+        for f, got, d in mismatched[:5]:
+            print(f"[check] RGB MISMATCH: {f} -> {got} (max diff {d:.4f})")
+        raise SystemExit(f"[check] Baseline faces: {len(not_found)} not found, "
+                         f"{len(mismatched)} with RGB not matching "
+                         f"{BASELINE_TEST_CSV.name}. Nothing was run.")
+    print(f"[check] all {len(test)} Baseline faces found; "
+          f"{len(test) - len(exceptions)} RGB-verified "
+          f"({renamed} via ' (2)' -> '_1'; max diff {worst:.4f}), "
+          f"{len(exceptions)} logged exception(s)")
 
 
 def load_baseline_face(fname: str) -> np.ndarray:
-    """Load the original (non-SSR) 224x224 face for the Baseline model."""
-    stem = pathlib.Path(fname).stem
-    folder = pathlib.Path(fname).parent.name
-    for ext in (".jpg", ".png"):
-        p = SPLIT_DIR / "images" / folder / f"{stem}{ext}"
-        if p.exists():
-            bgr = cv2.imread(str(p))
-            img = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-            if img.shape[:2] != (IMG_SIZE, IMG_SIZE):
-                img = cv2.resize(img, (IMG_SIZE, IMG_SIZE), interpolation=cv2.INTER_AREA)
-            return img.astype(np.uint8)
-    raise FileNotFoundError(f"baseline face not found: {fname}")
+    """Load the verified original (non-SSR) 224x224 face for the Baseline model."""
+    img = _read_face(BASELINE_PATHS[fname])
+    if img is None:
+        raise FileNotFoundError(f"could not read {BASELINE_PATHS[fname]}")
+    return img
 # -------------------------- END ADAPTER ----------------------------------
+
+
+def suffix_of(run_tag: str) -> str:
+    return f"_{run_tag}" if run_tag else ""
+
+
+def hv_model_path(region: str, run_tag: str):
+    return MODEL_DIR / f"hueview_{region}{suffix_of(run_tag)}.h5"
+
+
+def hv_scaler_path(region: str, run_tag: str):
+    return MODEL_DIR / f"lab_scaler_{region}{suffix_of(run_tag)}.pkl"
 
 
 # ------------------------------------------------------------- undertone
 def baseline_undertone(rgb_mean: np.ndarray) -> str:
-    """Phase 6.3 rule, on normalised RGB ratios."""
+    """Phase 6.3 rule, on normalised RGB ratios (Aarabi et al., 2015)."""
     s = float(rgb_mean.sum()) or 1.0
     b = float(rgb_mean[2]) / s
     if b > 0.285:
@@ -94,7 +227,7 @@ def baseline_undertone(rgb_mean: np.ndarray) -> str:
 
 
 def hue_angle(lab: np.ndarray) -> float:
-    """h_ab in degrees, 0..360, from real-unit a*/b*."""
+    """h_ab in degrees, 0..360, from real-unit a*/b* (a 3-D [L*, a*, b*] vector)."""
     return float(np.degrees(np.arctan2(lab[2], lab[1])) % 360.0)
 
 
@@ -107,7 +240,10 @@ def region_undertone(h: float) -> str:
 
 
 def majority_undertone(per_region: dict[str, tuple[str, float]]) -> str:
-    """Phase 9 majority vote; ties broken by the region closest to 60 deg."""
+    """Phase 9 majority vote; ties broken by the region closest to 60 deg.
+    Regions without usable skin pixels are left out of per_region."""
+    if not per_region:
+        return "Undetermined"
     votes = [v[0] for v in per_region.values()]
     counts = {u: votes.count(u) for u in set(votes)}
     top = max(counts.values())
@@ -121,30 +257,26 @@ def majority_undertone(per_region: dict[str, tuple[str, float]]) -> str:
     return best
 
 
-# ------------------------------------------------------------- test LAB
+# ------------------------------------------------------------- CIELAB
 def clear_stale_test_cache():
-    """Test LAB caches from an earlier SSR setting would silently feed the
-    wrong colour features to the new models. Always rebuild them."""
-    for f in RESULT_DIR.glob("lab_cache_*_test.npy"):
-        f.unlink()
-        print(f"[lab] removed stale {f.name}")
+    """Test LAB caches from an earlier SSR setting, mask version or test split
+    would silently feed the wrong colour features. Always rebuild them.
+    (cache_lab writes lab_cache_<region>_test.npy and ..._test_usable.npy.)"""
+    for pat in ("lab_cache_*_test.npy", "lab_cache_*_test_usable.npy"):
+        for f in RESULT_DIR.glob(pat):
+            f.unlink()
+            print(f"[lab] removed stale {f.name}")
 
 
-def test_lab(region: str, df: pd.DataFrame) -> np.ndarray:
-    """Same computation as train.cache_lab (mask-aware mean L*a*b*)."""
-    out = RESULT_DIR / f"lab_cache_{region}_test.npy"
-    if out.exists():
-        arr = np.load(out)
-        if len(arr) == len(df):
-            return arr
-    vecs = []
-    for fn in df[FNAME_COL]:
-        patch, mask = load_patch(region, fn)
-        vecs.append(cielab_mean(patch, mask))
-    arr = np.stack(vecs)
-    np.save(out, arr)
-    print(f"[lab] {region}/test: cached {len(arr)} vectors")
-    return arr
+def train_fallback(region: str, train_df: pd.DataFrame) -> np.ndarray:
+    """Exactly train.train_region's fallback: TRAIN-split mean over usable rows.
+    Uses the lab_cache_<region>_train.npy that training already wrote."""
+    lab_tr, ok_tr = cache_lab(region, train_df, "train")
+    assert len(lab_tr) == len(train_df), (
+        f"lab_cache_{region}_train.npy has {len(lab_tr)} rows but "
+        f"{TRAIN_CSV.name} has {len(train_df)} — stale train cache; delete it "
+        f"and rerun (it was built from a different split).")
+    return np.nanmean(lab_tr[ok_tr], axis=0)
 
 
 # ------------------------------------------------------------- inference
@@ -161,23 +293,23 @@ def predict_baseline(df: pd.DataFrame):
     return np.array(preds), tones
 
 
-def predict_hueview(df: pd.DataFrame, region: str):
-    """Returns (SCC preds, per-image (undertone, hue_angle))."""
-    model = keras.models.load_model(MODEL_DIR / f"hueview_{region}.h5", compile=False)
-    scaler = joblib.load(MODEL_DIR / f"lab_scaler_{region}.pkl")   # fit on TRAIN in train.py
-    lab_raw = test_lab(region, df)
-    lab = scaler.transform(lab_raw).astype(np.float32)
+def predict_hueview(test_df, train_df, region, run_tag):
+    """Returns (SCC preds, raw test LAB, usable flags)."""
+    model = keras.models.load_model(hv_model_path(region, run_tag), compile=False)
+    scaler = joblib.load(hv_scaler_path(region, run_tag))   # fit on TRAIN in train.py
 
+    lab_raw, ok = cache_lab(region, test_df, "test")         # same code as train/val
+    lab = impute_from_train(lab_raw, ok, train_fallback(region, train_df))
+
+    # Same input builder as training/validation: no shuffle, no augmentation.
+    seq = HueViewSeq(test_df, region, lab, scaler, BATCH,
+                     shuffle=False, do_augment=False)
     preds = []
-    for i in range(0, len(df), BATCH):
-        chunk = df[FNAME_COL].iloc[i:i + BATCH].tolist()
-        # load_patch: regions/ JPG patches, or images_ssr/ face for full_face
-        imgs = np.stack([load_patch(region, f)[0] for f in chunk]).astype(np.float32)
-        p = model.predict({"img": imgs, "lab": lab[i:i + BATCH]}, verbose=0)
+    for i in range(len(seq)):
+        x, _ = seq[i]
+        p = model.predict(x, verbose=0)
         preds.extend(p.argmax(1) + 1)
-
-    tones = [(region_undertone(hue_angle(v)), hue_angle(v)) for v in lab_raw]
-    return np.array(preds), tones
+    return np.array(preds), lab_raw, ok
 
 
 # --------------------------------------------------------------- metrics
@@ -209,30 +341,84 @@ def save_confusion(y_true, y_pred, path):
                  columns=[f"pred_SCC-{c}" for c in LABELS]).to_csv(path)
 
 
+# ---------------------------------------------------------------- checks
+def model_provenance(run_tag: str):
+    """Print and save exactly which model/scaler files were evaluated."""
+    files = [BASELINE_H5] + [hv_model_path(r, run_tag) for r in REGIONS] \
+          + [hv_scaler_path(r, run_tag) for r in REGIONS]
+    rows = []
+    for p in files:
+        h = hashlib.sha256(p.read_bytes()).hexdigest()[:12]
+        mt = datetime.datetime.fromtimestamp(p.stat().st_mtime)
+        rows.append({"file": str(p), "modified": mt.isoformat(timespec="seconds"),
+                     "sha256_12": h})
+        print(f"[model] {p.name:34s} {mt:%Y-%m-%d %H:%M}  {h}")
+    pd.DataFrame(rows).to_csv(RESULT_DIR / "model_provenance.csv", index=False)
+
+    # best val_accuracy logged by train.py for this run_tag, for cross-checking
+    log = RESULT_DIR / f"training_log{suffix_of(run_tag)}.csv"
+    if log.exists():
+        print(f"[model] best val_accuracy from {log.name}:")
+        print(pd.read_csv(log).to_string(index=False))
+
+
+def check_splits(test: pd.DataFrame):
+    """Leak check + paired-test check before any model runs."""
+    test_set = set(test[FNAME_COL])
+
+    # 1) no test image may appear in ANY split either model was trained/tuned on
+    for path in (TRAIN_CSV, VAL_CSV, BASELINE_TRAIN_CSV, BASELINE_VAL_CSV):
+        other = set(pd.read_csv(path)[FNAME_COL])
+        overlap = other & test_set
+        assert not overlap, f"LEAK: {len(overlap)} test files also in {path.name}"
+    print("[check] no leakage into HueView or Baseline train/val splits")
+
+    # 2) usable test must be a subset of the Baseline test split
+    b_test = set(pd.read_csv(BASELINE_TEST_CSV)[FNAME_COL])
+    extra = test_set - b_test
+    assert not extra, (f"{len(extra)} usable test files are not in "
+                       f"{BASELINE_TEST_CSV.name} — splits do not match")
+    print(f"[check] usable test: {len(test_set)} / baseline test: {len(b_test)} "
+          f"({len(b_test) - len(test_set)} excluded by pipeline-compatibility filter)")
+
+
+def print_test_composition(rec: pd.DataFrame):
+    """Counts to report in the manuscript (test set changed after filtering)."""
+    print("\n[test] images per SCC:")
+    print(rec["SCC_ground_truth"].value_counts().sort_index().to_string())
+    print("\n[test] images per illumination bin:")
+    print(rec["illumination_label"].value_counts().to_string())
+    print()
+
+
 # ------------------------------------------------------------------ main
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--primary", default="full_face", choices=REGIONS,
                     help="config used for the headline HueView column")
+    ap.add_argument("--run-tag", default="final",
+                    help="train.py run_tag of the models to evaluate "
+                         "(hueview_<region>_<run_tag>.h5); '' for no suffix")
     a = ap.parse_args()
 
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
     test = pd.read_csv(TEST_CSV).reset_index(drop=True)
+    train_df = pd.read_csv(TRAIN_CSV)
     n = len(test)
-    print(f"test images: {n}")
+    print(f"test images: {n}  ({TEST_CSV.name})   run_tag={a.run_tag!r}")
 
-    # --- every HueView model must exist before we start a long run
+    # --- every model must exist before we start a long run
     missing = [r for r in REGIONS
-               if not (MODEL_DIR / f"hueview_{r}.h5").exists()
-               or not (MODEL_DIR / f"lab_scaler_{r}.pkl").exists()]
-    assert not missing, f"missing HueView model/scaler for: {missing} — finish train.py first"
+               if not hv_model_path(r, a.run_tag).exists()
+               or not hv_scaler_path(r, a.run_tag).exists()]
+    assert not missing, (f"missing HueView model/scaler for {missing} "
+                         f"(expected e.g. {hv_model_path(missing[0], a.run_tag).name} "
+                         f"in {MODEL_DIR})" if missing else "")
+    assert BASELINE_H5.exists(), f"missing Baseline model: {BASELINE_H5}"
+    model_provenance(a.run_tag)
 
-    # --- leak re-check against the SAME splits train.py used
-    for path in (TRAIN_CSV, VAL_CSV):
-        other = set(pd.read_csv(path)[FNAME_COL])
-        overlap = other & set(test[FNAME_COL])
-        assert not overlap, f"LEAK: {len(overlap)} test files also in {path.name}"
-
+    check_splits(test)
+    resolve_baseline_faces(test)
     clear_stale_test_cache()
 
     rec = pd.DataFrame({
@@ -241,23 +427,36 @@ def main():
                                            .str.extract(r'(\d+)', expand=False).astype(int),
         "illumination_label": test["illumination_label"],
     })
+    print_test_composition(rec)
 
     print("running baseline ...")
     b_pred, b_tone = predict_baseline(test)
     rec["baseline_pred"] = b_pred
     rec["baseline_undertone"] = b_tone
 
-    tones_by_region = {}
+    raw_lab, usable = {}, {}
     for r in REGIONS:
         print(f"running hueview/{r} ...")
-        p, t = predict_hueview(test, r)
+        p, lab_raw, ok = predict_hueview(test, train_df, r, a.run_tag)
         rec[f"hv_{r}"] = p
-        tones_by_region[r] = t
+        raw_lab[r], usable[r] = lab_raw, ok
+        print(f"[lab] {r}/test: {(~ok).sum()} of {n} images had no usable "
+              f"skin region (imputed from train mean)")
 
-    rec["hv_majority_undertone"] = [
-        majority_undertone({r: tones_by_region[r][i] for r in REGIONS})
-        for i in range(n)
-    ]
+    # --- undertone: five facial regions, raw LAB, unusable regions abstain
+    maj = []
+    for i in range(n):
+        votes = {}
+        for r in VOTE_REGIONS:
+            v = raw_lab[r][i]
+            if usable[r][i] and np.isfinite(v).all():
+                h = hue_angle(v)
+                votes[r] = (region_undertone(h), h)
+        maj.append(majority_undertone(votes))
+    rec["hv_majority_undertone"] = maj
+    und = (rec["hv_majority_undertone"] == "Undetermined").sum()
+    if und:
+        print(f"[undertone] {und} images had no usable facial region -> 'Undetermined'")
 
     # --- integrity checks before anything downstream trusts this file
     assert len(rec) == n, "row count drifted"

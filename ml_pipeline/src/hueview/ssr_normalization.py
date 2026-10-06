@@ -1,14 +1,16 @@
 """
-SSR (Single-Scale Retinex) Illumination Correction
+SSR (Single-Scale Retinex) Illumination Normalization
 
 Phase 7, Stream B (parallel to 7.1) -- HueView
 
-SSR is used to estimate illumination variation. The SSR response is
-converted into a correction factor that is applied to the original
-facial image.
+SSR is used to remove uneven illumination across the face. The SSR
+reflectance is computed on the luminance channel using a Gaussian
+illumination estimate with sigma=30, and the image is re-lit under a
+uniform illumination equal to its mean illumination.
 
-The correction is performed independently per channel using a Gaussian
-illumination estimate with sigma=30.
+The resulting correction is applied equally to the R, G and B channels
+(so skin hue/chroma is kept), and the image's mean intensity is
+preserved (so the skin-tone level is not altered).
 
 Job list comes from landmarks_index.csv (Phase 7.1's output) -- only
 images that successfully got landmarks are processed.
@@ -53,7 +55,9 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 SIGMA = 30.0
 EPSILON = 1.0
-SAMPLE_SIZE = 0 
+STRENGTH = 1.0            # 0 = no effect, 1 = full flattening
+GAIN_LIMITS = (0.5, 2.0)  # guards against extreme corrections
+SAMPLE_SIZE = 0
 
 
 # ------------------------------------------------------------------- SSR --
@@ -62,53 +66,45 @@ def apply_ssr(
     image: np.ndarray,
     sigma: float = SIGMA,
     epsilon: float = EPSILON,
+    strength: float = STRENGTH,
+    gain_limits: tuple = GAIN_LIMITS,
 ) -> np.ndarray:
     """
-    SSR-derived illumination correction.
+    SSR-based illumination normalization.
 
-    SSR is computed independently for each channel:
-
-        R(x,y) = log(I(x,y)) - log(L(x,y))
-
-    where L(x,y) is the Gaussian-blurred illumination estimate.
-
-    The SSR response is converted into a correction factor and applied
-    to the original facial image.
+        Y(x,y)  = 0.299 R + 0.587 G + 0.114 B          (luminance)
+        L(x,y)  = G_sigma * Y                          (illumination)
+        r(x,y)  = log Y(x,y) - log L(x,y)              (SSR reflectance)
+        Y'(x,y) = exp(r(x,y)) * mean(L)                (uniform re-lighting)
+        g(x,y)  = clip(Y'/Y, 0.5, 2.0), rescaled so mean(g*Y) = mean(Y)
+        I'_c    = g * I_c   for c in {R, G, B}
     """
 
     img = image.astype(np.float64) + epsilon
-    corrected = np.empty_like(img)
 
-    for c in range(img.shape[2]):
-        channel = img[:, :, c]
+    # Luminance (OpenCV loads images as BGR)
+    lum = 0.114 * img[:, :, 0] + 0.587 * img[:, :, 1] + 0.299 * img[:, :, 2]
 
-        # Estimate illumination
-        illumination = cv2.GaussianBlur(
-            channel,
-            (0, 0),
-            sigmaX=sigma,
-            sigmaY=sigma
-        )
+    # Estimate illumination
+    illumination = cv2.GaussianBlur(lum, (0, 0), sigmaX=sigma, sigmaY=sigma)
 
-        # SSR response
-        retinex = np.log(channel) - np.log(illumination)
+    # SSR reflectance
+    retinex = np.log(lum) - np.log(illumination)
 
-        # Convert SSR response into correction factor
-        correction = np.exp(retinex)
+    # Re-light under a uniform illumination equal to the mean illumination
+    target = illumination.mean()
+    gain = (np.exp(retinex) * target) / lum
 
-        # Normalize correction around 1.0
-        correction_mean = correction.mean()
+    # Prevent extreme corrections
+    gain = np.clip(gain ** strength, *gain_limits)
 
-        if correction_mean > 1e-6:
-            correction /= correction_mean
+    # Preserve the original overall brightness
+    gain *= lum.mean() / (lum * gain).mean()
 
-        # Prevent extreme corrections
-        correction = np.clip(correction, 0.5, 2.0)
+    # Apply the same gain to all three channels
+    corrected = img * gain[:, :, None]
 
-        # Apply correction to the original image
-        corrected[:, :, c] = channel * correction
-
-    return np.clip(corrected, 0, 255).astype(np.uint8)
+    return np.clip(corrected - epsilon, 0, 255).astype(np.uint8)
 
 
 # --------------------------------------------------------------- worker --
@@ -208,7 +204,8 @@ def collect_jobs():
             continue
 
         counts[how] += 1
-        dst_path = OUTPUT_ROOT / src_path.relative_to(IMAGES_ROOT)
+        # Save under the landmarks_index name so downstream phases find it
+        dst_path = OUTPUT_ROOT / filename
         jobs.append((src_path, dst_path))
 
     print(f"Matched by: {counts}")

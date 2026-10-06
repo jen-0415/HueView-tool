@@ -1,0 +1,2 @@
+filename,used_file,max_rgb_diff,reason
+MST-7/0800_0_0_0_01.jpg,C:\Users\Elizabeth\HueView-tool\ml_pipeline\data\processed\images\MST-7\0800_0_0_0_01.jpg,0.0306,Phase 6 RGB record duplicated across filenames; exact-name file used
