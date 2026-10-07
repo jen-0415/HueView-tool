@@ -1,9 +1,10 @@
 """
 Phase 14.2 -- Model loading (once, at startup)
 ================================================
-Baseline: final weights (manuscript-compliant).
+Baseline: baseline_effnet_final.h5.
 HueView: per-region weights from train.py v3 (manuscript-aligned: HSV-filtered
-skin masks, skimage CIELAB, 15-D full_face vector).
+skin masks, skimage CIELAB, 15-D full_face vector), "_final1" preferred,
+"_final" as the per-region fallback.
 """
 
 from __future__ import annotations
@@ -16,15 +17,19 @@ from .paths import MODELS_DIR
 
 logger = logging.getLogger(__name__)
 
-BASELINE_WEIGHTS_FILENAME = "baseline_effnet.keras"
+BASELINE_WEIGHTS_FILENAME = "baseline_effnet_final.h5"
 
 HUEVIEW_REGIONS = ["forehead", "left_cheek", "right_cheek", "nose_bridge", "jawline", "full_face"]
-# train.py's run_tag suffix. "_final" = the v3 manuscript-aligned retrain
-# (HSV skin masks, skimage CIELAB, 15-D full_face). inference/hueview.py builds
-# inputs for THAT contract -- older "_final_candidate" weights won't match it.
-HUEVIEW_SUFFIX = "_final"
+# train.py run_tag suffixes, in order of preference. Each region loads the
+# first suffix whose model AND scaler both exist, so a region without a
+# "_final1" file (currently full_face) falls back to "_final". All of these
+# are train.py v3 weights (HSV skin masks, skimage CIELAB, 15-D full_face),
+# which is the input contract inference/hueview.py builds -- older
+# "_final_candidate" weights won't match it.
+HUEVIEW_SUFFIXES = ("_final1", "_final")
 
 _models = {"baseline": None, "hueview": None}
+_files = {"baseline": None, "hueview": {}}   # what actually got loaded
 _loaded = False
 
 
@@ -37,6 +42,7 @@ def load_models() -> dict:
     if baseline_path.exists():
         logger.info("Loading baseline model from %s", baseline_path)
         _models["baseline"] = keras.models.load_model(baseline_path, compile=False)
+        _files["baseline"] = baseline_path.name
         logger.info("Baseline model loaded.")
     else:
         logger.warning("Baseline weights not found at %s -- placeholder mode.", baseline_path)
@@ -55,24 +61,45 @@ def _load_hueview():
         logger.warning("joblib not installed -- HueView placeholder mode. pip install scikit-learn")
         return None
 
-    models, scalers, missing = {}, {}, []
+    models, scalers, chosen, missing = {}, {}, {}, []
     for region in HUEVIEW_REGIONS:
-        mpath = MODELS_DIR / f"hueview_{region}{HUEVIEW_SUFFIX}.h5"
-        spath = MODELS_DIR / f"lab_scaler_{region}{HUEVIEW_SUFFIX}.pkl"
-        if not mpath.exists():
-            missing.append(mpath.name); continue
-        if not spath.exists():
-            missing.append(spath.name); continue
-        models[region] = keras.models.load_model(mpath, compile=False)
-        scalers[region] = joblib.load(spath)
+        for suffix in HUEVIEW_SUFFIXES:
+            mpath = MODELS_DIR / f"hueview_{region}{suffix}.h5"
+            spath = MODELS_DIR / f"lab_scaler_{region}{suffix}.pkl"
+            if mpath.exists() and spath.exists():
+                models[region] = keras.models.load_model(mpath, compile=False)
+                scalers[region] = joblib.load(spath)
+                chosen[region] = suffix
+                logger.info("HueView %-12s <- %s + %s", region, mpath.name, spath.name)
+                break
+        else:
+            missing.append(region)
 
     if missing:
-        logger.warning("HueView placeholder mode -- missing %d file(s): %s",
-                       len(missing), ", ".join(missing))
+        logger.warning("HueView placeholder mode -- no model+scaler pair for %s (tried suffixes %s)",
+                       ", ".join(missing), ", ".join(HUEVIEW_SUFFIXES))
         return None
 
-    logger.info("HueView loaded (%d regions, suffix %r).", len(models), HUEVIEW_SUFFIX)
+    _files["hueview"] = chosen
     return {"models": models, "scalers": scalers}
+
+
+def model_files() -> dict:
+    """Which weights were loaded: {"baseline": filename, "hueview": {region: suffix}}."""
+    return {"baseline": _files["baseline"], "hueview": dict(_files["hueview"])}
+
+
+def checkpoint_label(model: str) -> str:
+    """Short description of the loaded weights for the UI's "ckpt" field."""
+    if model == "baseline":
+        return _files["baseline"] or "no weights loaded"
+    by_suffix: dict = {}
+    for region, suffix in _files["hueview"].items():
+        by_suffix.setdefault(suffix.lstrip("_"), []).append(region)
+    if not by_suffix:
+        return "no weights loaded"
+    return "; ".join(f"{tag}: {', '.join(regions)}" if len(by_suffix) > 1 else tag
+                     for tag, regions in by_suffix.items())
 
 
 def models_loaded() -> dict:

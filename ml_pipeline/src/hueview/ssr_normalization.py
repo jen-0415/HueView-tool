@@ -5,7 +5,7 @@ Phase 7, Stream B (parallel to 7.1) -- HueView
 
 SSR is used to remove uneven illumination across the face. The SSR
 reflectance is computed on the luminance channel using a Gaussian
-illumination estimate with sigma=30, and the image is re-lit under a
+illumination estimate with sigma=50, and the image is re-lit under a
 uniform illumination equal to its mean illumination.
 
 The resulting correction is applied equally to the R, G and B channels
@@ -55,7 +55,12 @@ OUTPUT_ROOT = PROJECT_ROOT / "data" / "processed" / "images_ssr"
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
-SIGMA = 30.0
+# 50 (was 30): at 30 the blur is small enough to treat "face brighter than its
+# hair/background" as uneven lighting and darken the face (-12..-21% on the
+# ssr_test photos); 50 roughly halves that. data/processed/images_ssr/ and the
+# trained HueView models were made at an earlier setting -- re-run this batch
+# and retrain for them to match the web app.
+SIGMA = 50.0
 EPSILON = 1.0
 STRENGTH = 1.0            # 0 = no effect, 1 = full flattening
 GAIN_LIMITS = (0.5, 2.0)  # guards against extreme corrections

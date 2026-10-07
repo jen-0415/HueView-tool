@@ -3,7 +3,8 @@ Phase 14.5 -- run_baseline()
 
 Global RGB averaging + the rule-based undertone branch. Both are REAL --
 neither needs trained weights. SCC classification is now real too, once
-baseline_effnet.keras is present; falls back to placeholder if it isn't.
+the weights in models.BASELINE_WEIGHTS_FILENAME are present; falls back to
+placeholder if they aren't.
 
 Reuses src/baseline/undertone.py directly rather than reimplementing the
 thresholds, so the demo can't drift from what Phase 6.3 measured.
@@ -17,7 +18,7 @@ from typing import Dict
 import numpy as np
 
 from ..baseline.undertone import classify_undertone, undertone_ratios
-from .models import load_models
+from .models import checkpoint_label, load_models
 
 # Fixed class order from Stage 2 training (baseline_training_summary.json
 # "classes" field). idx 0 -> SCC-1 ... idx 5 -> SCC-6.
@@ -53,7 +54,7 @@ def run_baseline(crop_rgb: np.ndarray) -> Dict:
     return {
         "name": "Baseline",
         "method": "EfficientNetB0 + global RGB mean",
-        "checkpoint": "no weights loaded" if is_placeholder else "loaded",
+        "checkpoint": checkpoint_label("baseline"),
         "placeholder": is_placeholder,
         "scc": scc,
         "probabilities": probabilities,
