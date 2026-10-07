@@ -1,4 +1,5 @@
-// The six SCC classes. Order must match checkpoints/label_order.json on the backend.
+// The six SCC classes. Order must match the backend (configs/scc_labels.json
+// and the models' output order).
 export const SCC = [
   { id: "SCC-1", label: "Very Light", hex: "#F6E3D2" },
   { id: "SCC-2", label: "Light", hex: "#E0BE99" },

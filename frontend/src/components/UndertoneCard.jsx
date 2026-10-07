@@ -51,7 +51,7 @@ function Side({ model, primary }) {
                 <span className="font-mono text-[12px] text-ink-soft">
                     {u.method === "rgb_ratio"
                         ? `b ratio ${u.b_ratio}`
-                        : `hue angle ${u.hue_angle_deg}°`}
+                        : `mean regional hue ${u.hue_angle_deg ?? "—"}°`}
                 </span>
             </div>
 

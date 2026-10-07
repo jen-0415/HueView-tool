@@ -5,10 +5,9 @@ The bridge between the API layer and Phase 14. routes.py imports from here
 and never touches the pipeline directly, so the web service and the model
 code stay independent of each other.
 
-The placeholder data this file used to return is gone: run_detect() and
-build_result() now call the real pipeline. Everything is real except SCC
-classification, which stays null until trained weights exist -- the
-frontend already handles that via each model's `placeholder` flag.
+run_detect() and build_result() call the real pipeline. If a model's
+weights are missing, that model's SCC fields come back null and its
+`placeholder` flag is true -- the frontend renders that state.
 """
 
 from __future__ import annotations
@@ -24,19 +23,18 @@ import numpy as np
 from ..inference.pipeline import classify_image
 from ..inference.preprocess import preprocess_image, NoFaceDetected  # noqa: F401
 from ..inference.hueview import compute_ssr, _img_input
-from ..inference.illumination import classify_illumination
 from ..inference.models import models_loaded as _models_loaded
 from ..hueview import ssr_normalization as ssr_mod
 from ..hueview.regions import REGION_DISPLAY, REGION_ORDER
 
 log = logging.getLogger(__name__)
 
-# Matches constants.js STAGES -- the frontend won't advance its progress UI
-# unless these exact keys come back in this order.
+# Stage keys streamed as SSE "stage" events, in this order. routes.py runs
+# "detect" and "ssr" for real and treats the rest as progress beats.
 STAGE_KEYS = ["detect", "ssr", "segment", "cnn", "lab", "undertone"]
 
-# Matches constants.js SCC order, and must equal Phase 10's label_order.json
-# once weights land, or every prediction is mislabeled without erroring.
+# Must match frontend/src/constants.js, configs/scc_labels.json and the
+# models' output order, or every prediction is mislabeled without erroring.
 SCC_LABELS = ["SCC-1", "SCC-2", "SCC-3", "SCC-4", "SCC-5", "SCC-6"]
 
 REGION_NAMES = [REGION_DISPLAY[r] for r in REGION_ORDER] + [REGION_DISPLAY["full_face"]]
@@ -47,13 +45,13 @@ def run_detect(image_bytes: bytes, filename: str = "") -> Dict:
     POST /api/detect -- the fast face check before committing to full
     inference. Real MTCNN now, with Phase 2's exact crop and gates.
     """
-    _crop, detection = preprocess_image(image_bytes)
+    crop, detection = preprocess_image(image_bytes)
     return {
         "confidence": detection["confidence"],
         "landmarks_found": detection["landmarks_found"],
         "bbox": detection["bbox"],
         "upscaled": detection["upscaled"],
-        "crop_preview": None,  # TODO: base64-encode _crop if the UI wants it
+        "crop_preview": _to_data_url(crop),   # the exact 224x224 crop both models get
     }
 
 
@@ -170,6 +168,7 @@ def build_result(image_bytes: bytes, filename: str = "", state: Optional[Dict] =
         crop = (state or {}).get("crop")
         if crop is None:
             crop, _ = preprocess_image(image_bytes)
+        payload["image"]["preview"] = _to_data_url(crop)   # Results shows the real crop
         hueview["segmentation"] = _segmentation_visuals(crop, capture)
     except Exception:
         # Display extra only -- never fail an analysis over a picture.

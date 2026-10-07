@@ -1,8 +1,11 @@
 """
 Phase 15 -- FastAPI entrypoint.
 
-Run from the project root:
+Run from ml_pipeline/:
     uvicorn src.api.main:app --port 8000
+or from the repo root:
+    uvicorn ml_pipeline.src.api.main:app --port 8000
+Add --reload during development so code changes are picked up.
 
 Interactive docs at http://localhost:8000/docs -- easiest way to test every
 endpoint without writing curl commands.
@@ -37,7 +40,7 @@ async def lifespan(app: FastAPI):
     if status["hueview"]:
         log.info("HueView model loaded and ready.")
     else:
-        log.info("HueView weights not yet available -- staying in placeholder mode (expected).")
+        log.warning("HueView weights missing -- /api/analyze will return placeholder SCC for HueView.")
     yield
     log.info("Shutting down HueView API")
 

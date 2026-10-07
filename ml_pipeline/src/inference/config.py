@@ -32,8 +32,9 @@ _FALLBACK_ILLUM: Dict = {
     "b2": 167.66,
 }
 
-#: Frontend constants.js hardcodes this order, and checkpoints/label_order.json
-#: must match it. A mismatch mislabels every prediction without erroring.
+#: Fallback if configs/scc_labels.json is missing. frontend/src/constants.js
+#: hardcodes the same order, and the models' output order must match it. A
+#: mismatch mislabels every prediction without erroring.
 DEFAULT_SCC_LABELS = [
     {"id": "SCC-1", "label": "Very Light"},
     {"id": "SCC-2", "label": "Light"},

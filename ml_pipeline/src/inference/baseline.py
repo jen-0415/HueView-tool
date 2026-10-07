@@ -52,7 +52,7 @@ def run_baseline(crop_rgb: np.ndarray) -> Dict:
 
     return {
         "name": "Baseline",
-        "method": "Global RGB averaging",
+        "method": "EfficientNetB0 + global RGB mean",
         "checkpoint": "no weights loaded" if is_placeholder else "loaded",
         "placeholder": is_placeholder,
         "scc": scc,

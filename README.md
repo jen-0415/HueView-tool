@@ -6,78 +6,164 @@ Undergraduate thesis, BS Computer Science — College of Computer and Informatio
 
 Aldover, J. · Dela Cruz, C. · Flororita, E. · Lumabi, J.
 
+The repository holds two applications:
+
+- **`ml_pipeline/`** — the Python side: dataset preprocessing, the Baseline and HueView models, evaluation, the single-image inference pipeline, and the FastAPI service.
+- **`frontend/`** — a React + Vite web app that uploads a face photo to the API and shows the Baseline-vs-HueView comparison.
+
 ---
 
-## ⚠️ Python 3.12 required
+## Repository structure
 
-Do not use 3.13 or 3.14. Two hard blocks:
+```text
+HueView-tool/
+├── README.md
+├── requirements.txt              # Python dependencies to install (unpinned; includes the API server)
+├── download_landmarker.py        # one-time: fetches ml_pipeline/face_landmarker.task
+├── merge_mst.py                  # one-time, DESTRUCTIVE: flattens the image batch folders into MST-* (see below)
+├── check_split.py                # SCC class balance across train/val/test
+├── peek_baseline.py              # print one Baseline prediction (edit the hardcoded image path first)
+├── peek_hueview.py               # print one full dual-model prediction (edit the image path first)
+├── verify_phase10.py             # pre-training readiness check (checks the older *_verified.csv splits)
+├── verify_names.py               # one-off SSR old-vs-new check (hardcoded path)
+├── results/                      # stray copy of phase7_routing_log.csv (the pipeline writes to ml_pipeline/results/)
+│
+├── frontend/
+│   ├── .env.example              # copy to .env: VITE_USE_MOCK, VITE_API_BASE
+│   ├── package.json              # npm scripts: dev, build, lint, preview
+│   └── src/
+│       ├── api.js                # every call to the backend (and the mock path)
+│       ├── useAnalysis.js        # upload -> confirm -> analyze (SSR preview) -> results
+│       ├── constants.js          # SCC labels/colours, undertone rule text
+│       ├── mockData.js           # used only when VITE_USE_MOCK=true
+│       ├── components/           # model cards, colour values, undertone, regional segmentation
+│       └── screens/              # Upload, Confirm, Analyzing, Results
+│
+└── ml_pipeline/                  # Python working root -- most scripts expect to run from here
+    ├── requirements.txt          # pinned pip freeze of the training env (UTF-16; no API packages)
+    ├── face_landmarker.task      # local only (gitignored): MediaPipe face mesh model
+    ├── configs/                  # frozen inference-time values
+    │   ├── hsv_skin_thresholds.json    # Phase 7.4 HSV skin filter
+    │   ├── illumination_thresholds.json# Phase 3 k-means boundaries
+    │   ├── scc_labels.json             # SCC-1..6 display names
+    │   └── train_config.json           # HueView training hyperparameters
+    ├── data/processed/           # split CSVs and metadata (committed); images gitignored
+    ├── models/                   # local only (gitignored): trained weights
+    ├── results/                  # evaluation outputs, training logs, confusion matrices
+    ├── notebooks/                # phase3_kmeans_illumination_binning.ipynb
+    ├── docs/                     # implementation notes and adviser drafts
+    ├── tests/test_phase7_smoke.py
+    ├── *.py                      # one-off diagnostics (check_*.py, split_leakage.py, verify_*.py, ...)
+    ├── ssr_compare.py            # old-vs-new SSR side-by-side tool
+    └── src/
+        ├── preprocessing/        # Phases 1-5: MTCNN crop, luminance, illumination clusters, labels, splits
+        ├── baseline/             # Phase 6: EfficientNetB0 + global RGB mean
+        ├── hueview/              # Phases 7-12: SSR, landmarks, regions, HSV filter, CIELAB, undertone, train, evaluate
+        ├── inference/            # Phase 14: single-image pipeline used by the API
+        └── api/                  # Phase 15: FastAPI service
+```
 
-- **MediaPipe** has no build for Python 3.13+ (needed for Phase 7 landmark extraction)
-- **TensorFlow** has no build for Python 3.14
+---
 
-On 3.14 you get `ERROR: Could not find a version that satisfies the requirement tensorflow (from versions: none)`, which looks like a network problem but isn't. Python 3.12.10 is the last 3.12 with a Windows installer — later 3.12.x are source-only.
+## Setup
+
+### Python
+
+Python 3.12 is recommended (3.11 also works). Do not use 3.13+: MediaPipe has no build for 3.13+, and TensorFlow has none for 3.14 — on 3.14 pip reports `Could not find a version that satisfies the requirement tensorflow`, which looks like a network problem but isn't.
 
 ```powershell
 py -3.12 -m venv .venv312
 .\.venv312\Scripts\Activate.ps1
 pip install -r requirements.txt
+python download_landmarker.py          # one-time, writes ml_pipeline/face_landmarker.task
 ```
 
-Verify:
+Install the root `requirements.txt`. `ml_pipeline/requirements.txt` is a pinned freeze of the training environment for reproducing exact versions; it lacks `fastapi`, `uvicorn`, `python-multipart` and `facenet-pytorch`, so the API and preprocessing will not run from it alone.
+
+**Training does not run locally.** TensorFlow dropped native Windows GPU support at 2.11; training runs on Colab. Preprocessing, inference, evaluation scripts and diagnostics run locally.
+
+### Model weights
+
+Weights are gitignored and shared via Google Drive. Place them in `ml_pipeline/models/`:
+
+| File | Used by |
+|---|---|
+| `baseline_effnet.keras` | the API (`src/inference/models.py`) |
+| `hueview_<region>_final.h5`, `lab_scaler_<region>_final.pkl` for forehead, left_cheek, right_cheek, nose_bridge, jawline, full_face | the API (`HUEVIEW_SUFFIX = "_final"`) |
+
+`src/hueview/evaluate.py` loads `baseline_effnet.h5` and takes the HueView tag from `--run-tag` (default `final`). If a model's files are missing, the API still starts and returns that model in placeholder mode (no SCC).
+
+---
+
+## Running
+
+### API
 
 ```powershell
-python -c "import tensorflow as tf, mediapipe; print(tf.__version__, mediapipe.__version__)"
+cd ml_pipeline
+uvicorn src.api.main:app --port 8000 --reload
 ```
 
-**Training does not run locally.** TensorFlow dropped native Windows GPU support at 2.11, so there is no GPU path on Windows regardless of your hardware. Phase 6.4 onward runs on Colab. Everything else — preprocessing, feature extraction, the undertone rule, all diagnostics — runs fine locally.
+Interactive docs: http://localhost:8000/docs. Models load once at startup (20-30 s). Without `--reload`, restart the server after changing Python code.
 
----
-
-## Structure
-
-```
-HueView-tool/
-├── data/processed/          # gitignored except CSV/JSON metadata
-│   ├── images/              # four batch folders (see below)
-│   ├── manifest.csv         # filename, MST/SCC labels, mean_y, illumination
-│   ├── train.csv            # frozen Phase 5 split — do not regenerate
-│   ├── val.csv
-│   ├── test.csv
-│   └── resolved_manifest.csv  # verified filename -> file mapping
-├── src/
-│   ├── preprocessing/       # Phases 1-5
-│   └── baseline/            # Phase 6
-└── requirements.txt
-```
-
-### `src/baseline/`
-
-**Pipeline**
-
-| File | Phase | Purpose |
-|---|---|---|
-| `path_resolver.py` | — | Resolves manifest filenames to files across the four image roots |
-| `resolve_manifest.py` | — | One-time verified pass producing `resolved_manifest.csv` |
-| `global_rgb_features.py` | 6.1 | Per-channel RGB means → 3-value feature vector |
-| `model.py` | 6.2 | EfficientNetB0 + RGB fusion → 6-class softmax |
-| `undertone.py` | 6.3 | Rule-based Warm/Neutral/Cool classification |
-
-**Diagnostics** (one-off; kept as evidence for how the dataset was resolved)
-
-| File | Question it answers |
+| Endpoint | Purpose |
 |---|---|
-| `check_dataset.py` | Duplicate collisions, cross-split leakage, root conflicts |
-| `characterize_roots.py` | How versions differ across folders |
-| `verify_root_choice.py` | Which root each row's labels came from |
-| `test_suffix_hypothesis.py` | What the `(n)` filename suffix means |
+| `POST /api/detect` | MTCNN face check, returns the 224 × 224 crop preview |
+| `POST /api/analyze` | registers a job, returns `{job_id}` |
+| `GET /api/analyze/{job_id}/events` | SSE stream: `stage` events, an `ssr` event (SSR intermediate images), then `result` |
+| `GET /api/health` | which models are loaded |
+| `GET /api/config` | SCC labels, region names, stage keys |
+
+CORS allows only `http://localhost:5173` and `http://127.0.0.1:5173` (the Vite dev server).
+
+### Frontend
+
+```powershell
+cd frontend
+npm install
+copy .env.example .env      # optional; defaults shown in the file
+npm run dev                 # http://localhost:5173
+npm run build               # production build into frontend/dist/
+```
+
+### Tests
+
+```powershell
+# from the repo root
+python -m ml_pipeline.tests.test_phase7_smoke
+```
+
+### Working directory and imports
+
+Most pipeline scripts use paths like `Path("data/processed")` relative to `ml_pipeline/`, so run them from there. `src/inference` and `src/hueview` locate `ml_pipeline/` themselves and work from anywhere. Modules that import `ml_pipeline.src.…` (most of `src/baseline`, `src/hueview`, the `peek_*.py` scripts and the tests) need the repo root on the import path: run them as modules from the repo root (`python -m ml_pipeline.src.hueview.train`), or set `$env:PYTHONPATH = ".."` when running from `ml_pipeline/`.
 
 ---
 
-## The four image folders
+## How HueView classifies an image
 
-`data/processed/images/` contains `processed/`, `c2_processed/`, `processed - 7-26/`, and `v5_processed/`. This is not a mistake, and understanding it matters before touching anything image-related.
+1. MTCNN crop to 224 × 224 (same settings as Phase 2).
+2. SSR illumination normalization (`src/hueview/ssr_normalization.py`, σ = 30).
+3. MediaPipe face mesh → five regions (forehead, cheeks, nose bridge, jawline) as landmark convex hulls.
+4. HSV skin filter inside each region (`configs/hsv_skin_thresholds.json`, decided on the original crop).
+5. Six models: one per region (skin-masked SSR patch + 3-D CIELAB) and one full-face (SSR face + 15-D CIELAB).
+6. **Final SCC in the web app:** the mean of the six models' probability vectors, argmax. **Note:** `evaluate.py` reports the full-face model alone (`--primary full_face`), so the thesis metrics and the app use different final rules.
+7. Undertone: hue angle of each region's CIELAB mean (Warm > 65°, Neutral 55–65°, Cool < 55°), majority vote across the five regions.
 
-The dataset was assembled in batches over time, growing to 43,221 images. When a later batch contained a filename an earlier batch already used, the manifest recorded the collision with a `(n)` marker while the file itself was written into that batch's own folder under the original name. **The suffix identifies which folder a row refers to. It is not a duplicate marker.**
+The Baseline is EfficientNetB0 on the crop fused with the global RGB mean; its undertone uses the normalized blue ratio (Cool > 0.285, Neutral 0.275–0.285, Warm < 0.275).
+
+### Known open issues
+
+- The HueView weights were trained on SSR images from the previous `apply_ssr()` (`data/processed/images_ssr/`); inference uses the current one. Retrain or revert before trusting HueView's numbers.
+- The undertone's CIELAB comes from the original crop in the app and `run_phase9_batch.py`, but from the SSR patches in `evaluate.py`.
+- The HSV filter does not reliably remove eyebrows or bangs from the forehead region.
+
+---
+
+## The image folders
+
+`ml_pipeline/data/processed/images/` is gitignored and comes from Google Drive. The dataset (43,221 images) was assembled in batches, each written to its own folder: `processed/`, `c1_processed/` (the 7-26 batch), `c2_processed/` and `v5_processed/`.
+
+When a later batch reused a filename, the manifest recorded the collision with a `(n)` marker while the file kept its original name inside its own batch folder. **The suffix identifies the folder, not a duplicate.**
 
 ```
 MST-8/foo.jpg        ->  processed/MST-8/foo.jpg
@@ -85,66 +171,28 @@ MST-8/foo (2).jpg    ->  c2_processed/MST-8/foo.jpg      (a different image)
 MST-2/bar.png        ->  v5_processed/MST-2/bar.bmp      (v5 batch is .bmp)
 ```
 
-Verified empirically rather than assumed. Each manifest row stores the `mean_y` of the image its labels were computed from, so `test_suffix_hypothesis.py` recomputes luminance from every candidate file and checks which reproduces it. Across 250 rows per group:
+This was verified empirically: each manifest row stores the `mean_y` of the image its labels came from, and `src/baseline/test_suffix_hypothesis.py` recomputes it from every candidate file (no suffix → `processed` 247/250; `(2)` → `c2_processed` 250/250). `src/baseline/resolve_manifest.py` verifies every row and writes `resolved_manifest.csv`, which the Baseline reads instead of re-deriving paths. Stripping the suffix would pair roughly 28% of the dataset with labels from a different image — silently.
 
-| Manifest row | Matching root |
-|---|---|
-| no suffix | `processed` — 247/250 (99%) |
-| `(2)` suffix | `c2_processed` — 250/250 (100%) |
+`merge_mst.py` moves every batch folder into flat `images/MST-1 … MST-10` folders, renaming collisions to `name_1.jpg`. It cannot be undone and breaks the mapping above. `resolved_manifest.csv`, `src/baseline/path_resolver.py` and the Baseline part of `evaluate.py` expect batch folders; `landmark_extraction.py` and `ssr_normalization.py` handle the merged layout. Check which layout your copy has before running a phase.
 
-Rule-based routing handles 43,203 of 43,221 rows correctly. The remainder — 18 rows using `(1)` — are inconsistent, so `resolve_manifest.py` verifies **every** row against its stored `mean_y` and writes the result to `resolved_manifest.csv`. All later phases read that table instead of re-deriving paths.
+### Splits
 
-### Why this matters
+| Split set | train / val / test | Used by |
+|---|---|---|
+| `train.csv` / `val.csv` / `test.csv` (= `baseline_rgb_*.csv`) | 30,074 / 8,618 / 4,529 | Baseline (frozen Phase 5 split — do not regenerate) |
+| `*_hueview_usable.csv` | 29,912 / 8,584 / 4,488 | HueView training and evaluation |
+| `*_verified.csv` | 19,610 / 5,634 / 2,994 | older scripts only (`verify_phase10.py`) |
 
-Stripping the suffix and serving the `processed` version would pair roughly 28% of the dataset with labels computed from a different rendering of that image. Nothing errors. The numbers just come out wrong.
-
-`resolved_manifest.csv` is committed deliberately. It is part of what makes the Baseline-vs-HueView comparison reproducible, and it guarantees both models read identical bytes for identical rows.
-
-### Verified clean
-
-`check_dataset.py` confirms **no cross-split leakage** — no image appears in more than one of train/val/test. The Phase 5 splits are sound and must not be regenerated; the methodology requires both models reuse them unchanged.
+`src/baseline/check_dataset.py` confirms no image appears in more than one of train/val/test.
 
 ---
 
-## Phase 6 status
+## Notes for whoever picks this up
 
-| | State |
-|---|---|
-| 6.1 Global RGB extraction | Code complete; needs `resolved_manifest.csv` |
-| 6.2 Classification branch | Complete and verified |
-| 6.3 Undertone rule | Complete and verified |
-| 6.4 Training | Pending — needs 6.1 output, runs on Colab |
-| 6.5 Evaluation | Pending |
+**Do not normalize images before the CNNs.** Keras' EfficientNet expects pixels in `[0, 255]` and rescales inside the model graph. The Baseline's RGB-mean input *is* scaled to `[0, 1]` — a different input with a different convention.
 
-### Notes for whoever picks this up
+**SCC label order is shared across several places:** `frontend/src/constants.js`, `ml_pipeline/configs/scc_labels.json`, `SCC_CLASS_ORDER` in `src/inference/baseline.py` and `hueview.py`, and the models' output order. A mismatch mislabels every prediction without erroring.
 
-**Do not normalize images before the CNN.** Keras' EfficientNet expects pixels in `[0, 255]` and rescales inside the model graph. Dividing by 255 first normalizes twice and quietly costs accuracy. The 6.1 RGB features *are* scaled to `[0, 1]`, but those feed the other branch — the two are different inputs with different conventions.
+**Check the undertone distribution before it reaches the results chapter.** The Baseline's Neutral band is only 0.01 wide; if one class dominates, report it plainly.
 
-**The RGB branch is outnumbered 1280-to-3.** Straight concatenation is what the methodology specifies, so that's the default, but the CNN branch dominates the gradient almost entirely. `model.py` exposes `rgb_projection_dim` if this is ever revisited — with the caveat that HueView's fusion needs the same treatment, or the comparison stops being like-for-like.
-
-**Check the undertone distribution before it reaches the results chapter.** The Neutral band spans only 0.01 (b_ratio 0.275–0.285) and skin tones cluster tightly. If one class dominates, that is a finding to report plainly, not three categories to present as equally exercised. `undertone.py` prints the distribution and flags any class above 90%.
-
-**Trained weights are gitignored** (`models/`, `*.h5`, `*.keras`). They live on Google Drive. Agree on a location before someone's laptop dies.
-
----
-
-## Running things
-
-Always run from the repo root — paths inside the scripts are relative to it.
-
-```powershell
-# One-time, after any manifest change (slow: ~1-2 hours over 43k rows)
-python src/baseline/resolve_manifest.py
-
-# Confirm dataset integrity
-python src/baseline/check_dataset.py
-
-# Phase 6.1
-python src/baseline/global_rgb_features.py
-
-# Phase 6.2 — architecture check
-python src/baseline/model.py
-
-# Phase 6.3
-python src/baseline/undertone.py
-```
+**Trained weights are gitignored** (`models/`, `*.h5`, `*.keras`, `*.pkl`). Agree on one Drive location.

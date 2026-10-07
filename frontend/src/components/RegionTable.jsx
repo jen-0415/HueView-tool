@@ -41,8 +41,9 @@ export default function RegionTable({ regions }) {
       </table>
 
       <p className="px-6 py-3 text-xs text-ink-soft">
-        Selection by the Regional Configuration Selector. Full face is excluded when the
-        five sub-regions pass the skin-pixel threshold.
+        L*a*b* per region from the Regional Configuration Selector. &ldquo;Excluded&rdquo; regions had
+        too few skin pixels and are filled from the face&apos;s other regions. The Full Face row
+        summarizes the five regions; its own model still contributes to the final SCC.
       </p>
     </Card>
   );

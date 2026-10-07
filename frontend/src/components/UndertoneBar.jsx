@@ -7,6 +7,10 @@ const PARTS = [
 // Labels live in the legend, never inside the segments — a 7% segment
 // cannot hold text, and clipped words look like a rendering bug.
 export default function UndertoneBar({ distribution }) {
+  // null when no region had usable skin pixels -- nothing to plot.
+  if (!distribution) {
+    return <div className="font-mono text-[11px] text-ink-soft">No usable regions</div>;
+  }
   return (
     <div>
       <div className="flex h-3 rounded-full overflow-hidden">

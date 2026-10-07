@@ -13,7 +13,6 @@ export function useAnalysis() {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
   const [detection, setDetection] = useState(null);
-  const [stages, setStages] = useState({});
   const [result, setResult] = useState(null);
   const [ssrPreview, setSsrPreview] = useState(null); // { original, ssr } data URLs
   const [error, setError] = useState(null);
@@ -33,7 +32,6 @@ export function useAnalysis() {
     setFile(null);
     setPreview(null);
     setDetection(null);
-    setStages({});
     setResult(null);
     setSsrPreview(null);
     setPendingResult(null);
@@ -63,7 +61,6 @@ export function useAnalysis() {
 
       if (target === "upload") clearAll();
       if (target === "confirm") {
-        setStages({});
         setResult(null);
         setSsrPreview(null);
         setPendingResult(null);
@@ -98,7 +95,6 @@ export function useAnalysis() {
   );
 
   const run = useCallback(() => {
-    setStages({});
     setError(null);
     setSsrPreview(null);
     setPendingResult(null);
@@ -107,7 +103,7 @@ export function useAnalysis() {
 
     cancelAnalysis.current = analyze(
       file,
-      (s) => setStages((prev) => ({ ...prev, [s.key]: s })),
+      () => {}, // per-stage progress isn't shown; the SSR preview is the progress view
       (r) => {
         cancelAnalysis.current = null;
         if (sawSsr.current) {
@@ -145,7 +141,7 @@ export function useAnalysis() {
   }, [clearAll, goTo]);
 
   return {
-    screen, preview, detection, stages, result, ssrPreview,
+    screen, preview, detection, result, ssrPreview,
     resultReady: pendingResult !== null,
     error, busy, upload, run, showResults, reset,
   };

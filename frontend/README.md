@@ -1,16 +1,33 @@
-# React + Vite
+# HueView frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + Vite + Tailwind. Uploads a face photo to the HueView API and shows the Baseline-vs-HueView comparison: face check, SSR intermediate images, both models' SCC and undertone, colour values, and HueView's regional segmentation with per-region SCC.
 
-Currently, two official plugins are available:
+## Run
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```powershell
+npm install
+copy .env.example .env   # optional
+npm run dev              # http://localhost:5173
+```
 
-## React Compiler
+Start the API first (`cd ../ml_pipeline; uvicorn src.api.main:app --port 8000 --reload`). The API's CORS allows only port 5173, so `npm run preview` (port 4173) cannot reach it as configured.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Configuration (`.env`)
 
-## Expanding the ESLint configuration
+| Variable | Default | Meaning |
+|---|---|---|
+| `VITE_USE_MOCK` | unset (= false) | `true` serves `src/mockData.js` and never calls the API |
+| `VITE_API_BASE` | `http://localhost:8000` | API base URL |
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Layout
+
+| Path | Role |
+|---|---|
+| `src/api.js` | the only file that talks to the backend (`/api/detect`, `/api/analyze` + SSE events) |
+| `src/useAnalysis.js` | screen flow: upload → confirm → analyzing (SSR preview, Continue) → results |
+| `src/constants.js` | SCC labels and colours, undertone rule text (must match the backend order) |
+| `src/mockData.js` | illustrative mock response, used only in mock mode |
+| `src/screens/` | `Upload`, `Confirm`, `Analyzing`, `Results` |
+| `src/components/` | `ModelCard`, `ColorValuesCard`, `UndertoneCard`, `IlluminationCard`, `RegionalSegmentationCard`, `RegionTable`, … |
+
+All displayed predictions and values come from the API response; nothing is computed in the browser except the agreement banner.

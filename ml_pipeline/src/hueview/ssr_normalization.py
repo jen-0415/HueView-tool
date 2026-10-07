@@ -9,8 +9,10 @@ illumination estimate with sigma=30, and the image is re-lit under a
 uniform illumination equal to its mean illumination.
 
 The resulting correction is applied equally to the R, G and B channels
-(so skin hue/chroma is kept), and the image's mean intensity is
-preserved (so the skin-tone level is not altered).
+(so skin hue/chroma is kept), and the WHOLE image's mean intensity is
+preserved. The face's own brightness is not: a face brighter than its
+surroundings (e.g. framed by dark hair) is darkened, a face darker than
+its surroundings is brightened.
 
 Job list comes from landmarks_index.csv (Phase 7.1's output) -- only
 images that successfully got landmarks are processed.

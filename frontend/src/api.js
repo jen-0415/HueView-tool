@@ -128,7 +128,7 @@ export function analyze(
         try {
           const payload = JSON.parse(e.data);
           onResult(payload.data);
-        } catch (err) {
+        } catch {
           onError(
             new Error("Invalid analysis result received.")
           );

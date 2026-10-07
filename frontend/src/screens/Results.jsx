@@ -9,7 +9,11 @@ import { sccLabel } from "../constants";
 
 export default function Results({ preview, result, onReset }) {
   const { baseline, hueview } = result.models;
-  const agree = baseline.scc === hueview.scc;
+  // A null SCC means that model's weights aren't loaded -- never call two
+  // missing predictions an agreement.
+  const bothPredicted = Boolean(baseline.scc && hueview.scc);
+  const agree = bothPredicted && baseline.scc === hueview.scc;
+  const sccText = (m) => (m.scc ? `${m.scc} — ${sccLabel(m.scc)}` : "No prediction");
 
   return (
     <main className="max-w-6xl mx-auto px-8 py-10">
@@ -30,23 +34,37 @@ export default function Results({ preview, result, onReset }) {
       </div>
 
       {/* The headline finding. Do not bury this in a table. */}
-      <div
-        className={`rounded-2xl px-6 py-4 mt-6 flex flex-wrap items-center gap-x-4 gap-y-1 border ${agree ? "bg-ok-bg border-ok" : "bg-blush-soft border-accent"
-          }`}
-      >
-        <span
-          className={`font-display text-xl ${agree ? "text-ok" : "text-accent"}`}
+      {bothPredicted ? (
+        <div
+          className={`rounded-2xl px-6 py-4 mt-6 flex flex-wrap items-center gap-x-4 gap-y-1 border ${agree ? "bg-ok-bg border-ok" : "bg-blush-soft border-accent"
+            }`}
         >
-          {agree ? "Both pipelines agree" : "The pipelines disagree"}
-        </span>
-        <span className="text-sm text-ink-soft">
-          {agree
-            ? `Both classified this face as ${baseline.scc} — ${sccLabel(baseline.scc)}.`
-            : `Baseline read this face as ${baseline.scc} — ${sccLabel(
-              baseline.scc,
-            )}; HueView read it as ${hueview.scc} — ${sccLabel(hueview.scc)}.`}
-        </span>
-      </div>
+          <span
+            className={`font-display text-xl ${agree ? "text-ok" : "text-accent"}`}
+          >
+            {agree ? "Both pipelines agree" : "The pipelines disagree"}
+          </span>
+          <span className="text-sm text-ink-soft">
+            {agree
+              ? `Both classified this face as ${baseline.scc} — ${sccLabel(baseline.scc)}.`
+              : `Baseline read this face as ${baseline.scc} — ${sccLabel(
+                baseline.scc,
+              )}; HueView read it as ${hueview.scc} — ${sccLabel(hueview.scc)}.`}
+          </span>
+        </div>
+      ) : (
+        <div className="rounded-2xl px-6 py-4 mt-6 flex flex-wrap items-center gap-x-4 gap-y-1 border bg-warm border-warm-ink/30">
+          <span className="font-display text-xl text-warm-ink">Comparison unavailable</span>
+          <span className="text-sm text-ink-soft">
+            {[baseline, hueview]
+              .filter((m) => !m.scc)
+              .map((m) => m.name)
+              .join(" and ")}{" "}
+            returned no SCC prediction (model weights not loaded), so the two pipelines
+            can&apos;t be compared for this image.
+          </span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr_1fr] gap-6 mt-6 items-start">
         <div>
@@ -96,13 +114,13 @@ export default function Results({ preview, result, onReset }) {
             <tbody>
               <Row
                 k="Input representation"
-                a="Global RGB average, full crop"
-                b="Six regional patches, SSR-normalized"
+                a="EfficientNetB0 on the full crop + global RGB mean"
+                b="Five skin-masked SSR regional patches + SSR full face, each with CIELAB"
               />
               <Row
                 k="Predicted class"
-                a={`${baseline.scc} — ${sccLabel(baseline.scc)}`}
-                b={`${hueview.scc} — ${sccLabel(hueview.scc)}`}
+                a={sccText(baseline)}
+                b={sccText(hueview)}
                 highlight
               />
               <Row k="Color space" a="RGB" b="CIELAB" />
@@ -114,7 +132,7 @@ export default function Results({ preview, result, onReset }) {
               <Row
                 k="Undertone descriptor"
                 a={`${baseline.undertone.label} (b = ${baseline.undertone.b_ratio})`}
-                b={`${hueview.undertone.label} (${hueview.undertone.hue_angle_deg}°)`}
+                b={`${hueview.undertone.label ?? "—"} (mean regional hue ${hueview.undertone.hue_angle_deg ?? "—"}°)`}
               />
             </tbody>
           </table>

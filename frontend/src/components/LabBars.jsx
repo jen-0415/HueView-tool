@@ -19,8 +19,10 @@ export default function LabBars({ lab }) {
     return (
         <div className="flex flex-col gap-4">
             {AXES.map((a) => {
-                const value = lab[a.key];
-                const pct = ((value - a.min) / (a.max - a.min)) * 100;
+                const raw = lab?.[a.key];
+                const known = typeof raw === "number" && Number.isFinite(raw);
+                const value = known ? raw : "—";   // null when no region was usable
+                const pct = known ? ((raw - a.min) / (a.max - a.min)) * 100 : null;
 
                 return (
                     <div key={a.key}>
@@ -36,10 +38,12 @@ export default function LabBars({ lab }) {
                             role="img"
                             aria-label={`${a.label} ${value}`}
                         >
-                            <span
-                                className="absolute top-1/2 w-1 h-4 rounded-full bg-ink border border-white"
-                                style={{ left: `${pct}%`, transform: "translate(-50%,-50%)" }}
-                            />
+                            {pct !== null && (
+                                <span
+                                    className="absolute top-1/2 w-1 h-4 rounded-full bg-ink border border-white"
+                                    style={{ left: `${pct}%`, transform: "translate(-50%,-50%)" }}
+                                />
+                            )}
                         </div>
                     </div>
                 );

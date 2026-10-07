@@ -1,5 +1,7 @@
-// Mock payload. Same shape as the real /api/analyze response,
-// so switching VITE_USE_MOCK to false changes nothing in the UI.
+// Mock payload for UI work without a backend (VITE_USE_MOCK=true only).
+// ILLUSTRATIVE values, not real predictions. Covers the core response
+// shape; the newer fields (SSR steps, per-region SCC/probabilities,
+// segmentation images, decision) are absent, so those cards render reduced.
 
 export const MOCK_DETECT = {
   confidence: 0.97,
@@ -14,8 +16,8 @@ export const MOCK_RESULT = {
   detection: { confidence: 0.97, landmarks_found: 5, upscaled: false },
 
   // Phase 3 illumination binning. Describes the INPUT image, not either model,
-  // so it sits outside the `models` block.
-  // REPLACE centroids and boundaries with your manuscript's k-means++ values.
+  // so it sits outside the `models` block. Centroids/boundaries are the real
+  // values from ml_pipeline/configs/illumination_thresholds.json.
   illumination: {
     metric: "Mean luminance",
     value: 118.4,
@@ -23,17 +25,17 @@ export const MOCK_RESULT = {
     bin: "Medium",
     bin_index: 2,
     bins: [
-      { name: "Low", centroid: 78.2, range: [0, 104.9] },
-      { name: "Medium", centroid: 131.5, range: [104.9, 158.9] },
-      { name: "High", centroid: 186.3, range: [158.9, 255] },
+      { name: "Low", centroid: 82.19, range: [0, 104.37] },
+      { name: "Medium", centroid: 126.54, range: [104.37, 167.66] },
+      { name: "High", centroid: 208.77, range: [167.66, 255] },
     ],
   },
 
   models: {
     baseline: {
       name: "Baseline",
-      method: "Global RGB averaging",
-      checkpoint: "b6f1a2c",
+      method: "EfficientNetB0 + global RGB mean",
+      checkpoint: "mock",
       placeholder: false,
       scc: "SCC-4",
       probabilities: [0.03, 0.08, 0.14, 0.71, 0.03, 0.01],
@@ -60,8 +62,8 @@ export const MOCK_RESULT = {
     hueview: {
       name: "HueView",
       method: "SSR + regional segmentation",
-      checkpoint: "9de4471",
-      placeholder: true, // true until the Phase 10 checkpoint exists
+      checkpoint: "mock",
+      placeholder: false,
       scc: "SCC-3",
       probabilities: [0.01, 0.05, 0.87, 0.05, 0.01, 0.01],
       confidence: 0.87,
