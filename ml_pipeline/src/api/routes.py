@@ -4,7 +4,8 @@ Phase 15 -- API endpoints.
 Matches what frontend/src/api.js actually calls:
     POST /api/detect                    -> face check + crop preview
     POST /api/analyze                   -> returns {job_id}
-    GET  /api/analyze/{job_id}/events   -> SSE: 6 "stage" events, then "result"
+    GET  /api/analyze/{job_id}/events   -> SSE: "stage" events, an "ssr" preview
+                                           after the ssr stage, then "result"
     GET  /api/health                    -> service + model status
     GET  /api/config                    -> SCC labels + region names
 """
@@ -24,6 +25,7 @@ from .inference import (
     REGION_NAMES,
     run_detect,
     run_stage,
+    run_ssr_preview,
     build_result,
     models_loaded,
 )
@@ -111,23 +113,30 @@ async def analyze_events(job_id: str):
 
     async def event_stream():
         try:
-            # The real pipeline runs as one call, and it does its own face
-            # detection -- so we don't call run_detect separately here. That
-            # would be a third MTCNN pass on the same image (once in
-            # /api/detect, once here, once inside classify_image), which is
-            # several wasted seconds per upload on CPU.
+            # Crop + SSR run first, for real, so the SSR image can stream to
+            # the UI before classification finishes. Their crop and SSR image
+            # are handed to build_result, so MTCNN runs once here (not again
+            # inside classify_image) and HueView analyzes the exact SSR image
+            # the user was shown.
             #
-            # The stage beats stream first so the UI shows progress, then the
-            # real work happens, then the result lands. Ordering is honest;
-            # the per-stage millisecond figures are not individually measured
+            # The remaining stages are beats: the rest of the pipeline runs as
+            # one call, so their ms figures are not individually measured
             # (see run_stage's docstring) -- the true cost is in each model's
             # inference_ms in the payload.
-            for key in STAGE_KEYS:
+            yield _sse("stage", {"key": "detect", "status": "running"})
+            previews, state = await asyncio.to_thread(run_ssr_preview, job["image"])
+            yield _sse("stage", {"key": "detect", "status": "done"})
+            yield _sse("stage", {"key": "ssr", "status": "running"})
+            yield _sse("stage", {"key": "ssr", "status": "done"})
+            yield _sse("ssr", previews)
+
+            for key in STAGE_KEYS[2:]:
                 yield _sse("stage", {"key": key, "status": "running"})
                 ms = await asyncio.to_thread(run_stage, key)
                 yield _sse("stage", {"key": key, "status": "done", "ms": ms})
 
-            payload = await asyncio.to_thread(build_result, job["image"], job["filename"])
+            payload = await asyncio.to_thread(
+                build_result, job["image"], job["filename"], state)
             yield _sse("result", {"data": payload})
 
         except NoFaceDetected as e:

@@ -26,7 +26,13 @@ export default function App() {
         />
       )}
 
-      {a.screen === "analyzing" && <Analyzing stages={a.stages} />}
+      {a.screen === "analyzing" && (
+        <Analyzing
+          ssrPreview={a.ssrPreview}
+          resultReady={a.resultReady}
+          onContinue={a.showResults}
+        />
+      )}
 
       {a.screen === "results" && (
         <Results preview={a.preview} result={a.result} onReset={a.reset} />

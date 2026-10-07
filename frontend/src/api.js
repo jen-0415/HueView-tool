@@ -48,7 +48,11 @@ export async function detect(file) {
    2. Run both pipelines, streaming stage progress
 
    onStage({ key, status, ms })
+   onSsr({ original, ssr, steps })   -- PNG data URLs, sent before the result;
+                                        steps = [{ label, image }] or null
    onResult(payload)
+
+   Mock mode sends no SSR preview.
 
    Returns a cancel() function.
    ---------------------------------------------------------------- */
@@ -57,7 +61,8 @@ export function analyze(
   file,
   onStage,
   onResult,
-  onError
+  onError,
+  onSsr = () => {}
 ) {
   // Mock mode
   if (USE_MOCK) {
@@ -102,6 +107,17 @@ export function analyze(
           onStage(JSON.parse(e.data));
         } catch {
           console.error("Invalid stage event:", e.data);
+        }
+      });
+
+      // SSR preview: the cropped face before and after SSR
+      es.addEventListener("ssr", (e) => {
+        if (cancelled) return;
+
+        try {
+          onSsr(JSON.parse(e.data));
+        } catch {
+          console.error("Invalid ssr event:", e.data);
         }
       });
 

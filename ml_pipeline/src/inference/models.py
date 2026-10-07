@@ -2,9 +2,8 @@
 Phase 14.2 -- Model loading (once, at startup)
 ================================================
 Baseline: final weights (manuscript-compliant).
-HueView: PROVISIONAL per-region weights -- trained geometric-mask-only, NOT the
-manuscript HSV-filtered way. FOR DEMO ONLY. Will be replaced with final weights 
-after manuscript retrain.
+HueView: per-region weights from train.py v3 (manuscript-aligned: HSV-filtered
+skin masks, skimage CIELAB, 15-D full_face vector).
 """
 
 from __future__ import annotations
@@ -20,7 +19,10 @@ logger = logging.getLogger(__name__)
 BASELINE_WEIGHTS_FILENAME = "baseline_effnet.keras"
 
 HUEVIEW_REGIONS = ["forehead", "left_cheek", "right_cheek", "nose_bridge", "jawline", "full_face"]
-HUEVIEW_SUFFIX = "_final_candidate"   # <-- swap to "" after manuscript retrain
+# train.py's run_tag suffix. "_final" = the v3 manuscript-aligned retrain
+# (HSV skin masks, skimage CIELAB, 15-D full_face). inference/hueview.py builds
+# inputs for THAT contract -- older "_final_candidate" weights won't match it.
+HUEVIEW_SUFFIX = "_final"
 
 _models = {"baseline": None, "hueview": None}
 _loaded = False
@@ -69,7 +71,7 @@ def _load_hueview():
                        len(missing), ", ".join(missing))
         return None
 
-    logger.info("HueView loaded (%d regions, PROVISIONAL geometric-trained weights).", len(models))
+    logger.info("HueView loaded (%d regions, suffix %r).", len(models), HUEVIEW_SUFFIX)
     return {"models": models, "scalers": scalers}
 
 

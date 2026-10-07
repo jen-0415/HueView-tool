@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 
+import numpy as np
+
 from .preprocess import preprocess_image, NoFaceDetected
 from .illumination import classify_illumination
 from .baseline import run_baseline
@@ -50,17 +52,28 @@ def _compare(baseline: Dict, hueview: Dict) -> Dict:
     }
 
 
-def classify_image(image_bytes: bytes, filename: str = "") -> Dict:
+def classify_image(
+    image_bytes: bytes,
+    filename: str = "",
+    crop: Optional[np.ndarray] = None,
+    detection: Optional[Dict] = None,
+    ssr: Optional[np.ndarray] = None,
+) -> Dict:
     """
     One image in, the full dual-model result out.
 
+    `crop`/`detection`/`ssr` may be passed in when the caller already ran
+    preprocessing and SSR (the API does, to stream the SSR preview first),
+    so MTCNN doesn't run a second time on the same upload.
+
     Raises NoFaceDetected -- the API turns that into a 422.
     """
-    crop, detection = preprocess_image(image_bytes)
+    if crop is None:
+        crop, detection = preprocess_image(image_bytes)
 
     illumination = classify_illumination(crop)
     baseline = run_baseline(crop)
-    hueview = run_hueview(crop)
+    hueview = run_hueview(crop, ssr=ssr)
 
     return {
         "image": {"width": 224, "height": 224, "preview": None},

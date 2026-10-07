@@ -4,11 +4,11 @@ Phase 14.6 -- run_hueview()
 SSR -> MediaPipe landmarks -> regional segmentation -> HSV skin filtering ->
 CIELAB -> undertone (manuscript path, for the undertone + L*a*b* display).
 
-CLASSIFICATION (SCC) uses a SEPARATE, provisional path that matches the
-CURRENT geometric-trained weights: SSR face under the geometric convex-hull
-mask (NO HSV filtering), cv2 CIELAB (train.py's cielab_mean), scaled by each
-region's lab_scaler. This flips back to the manuscript path once the
-compliant retrain lands.
+CLASSIFICATION (SCC) feeds each head exactly what train.py v3 trained it on,
+built from the same Phase 7.4 patches computed below: regional heads get the
+SSR patch with non-skin pixels zeroed plus a 3-D skimage CIELAB skin mean;
+full_face gets the unmasked SSR face plus the 15-D regional CIELAB vector.
+CIELAB comes from train.py's own cielab_mean(), so the values are identical.
 
 Ordering note: landmarks from the ORIGINAL crop; masking on the SSR image.
 """
@@ -27,6 +27,7 @@ from ..hueview.region_selector import RegionalConfigurationSelector, FULL_FACE
 from ..hueview.cielab_features import build_cielab_vector
 from ..hueview.regions import REGION_ORDER, REGION_DISPLAY
 from ..hueview.undertone import compute_undertone_descriptor
+from ..hueview.train import cielab_mean
 from .config import HSV_CONFIG, CIELAB_FROM_ORIGINAL
 from .models import load_models
 from .paths import find_landmarker
@@ -37,13 +38,21 @@ LANDMARKER_MODEL = find_landmarker()
 SCC_CLASS_ORDER = ["SCC-1", "SCC-2", "SCC-3", "SCC-4", "SCC-5", "SCC-6"]
 _NULL_CLS = {"scc": None, "probabilities": None, "confidence": None, "margin": None}
 
-# full_face training input domain is unconfirmed. train.py's load_face reads
-# data/processed/images/processed (looks NON-SSR), so default to the raw crop.
-# If full_face predictions look off, flip this to True (use the SSR face).
-HUEVIEW_FULLFACE_SSR = False
-
 _SELECTOR = RegionalConfigurationSelector()
 _landmarker = None
+
+
+def compute_ssr(crop_rgb: np.ndarray) -> np.ndarray:
+    """apply_ssr() on an RGB crop, returned as RGB.
+
+    apply_ssr weights luminance for BGR input, because the batch run feeds it
+    cv2.imread output. The upload crop is RGB (PIL), so swap in and out --
+    otherwise R and B trade luminance weights and the gain map no longer
+    matches the one the batch run produced.
+    """
+    import cv2
+    ssr_bgr = apply_ssr(cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2BGR))
+    return cv2.cvtColor(ssr_bgr, cv2.COLOR_BGR2RGB)
 
 
 def _get_landmarker():
@@ -90,18 +99,36 @@ def extract_landmarks(crop_rgb: np.ndarray) -> Optional[np.ndarray]:
     return coords[:468]
 
 
-# ---------------- provisional classification helpers ----------------------
-def _cielab_mean_cv2(patch_rgb: np.ndarray, mask) -> np.ndarray:
-    """train.py's cielab_mean, verbatim: cv2 RGB2LAB then rescale to real units."""
-    import cv2
-    lab = cv2.cvtColor(patch_rgb.astype(np.uint8), cv2.COLOR_RGB2LAB).astype(np.float32)
-    lab[..., 0] *= 100.0 / 255.0
-    lab[..., 1] -= 128.0
-    lab[..., 2] -= 128.0
-    px = lab[mask] if mask is not None else lab.reshape(-1, 3)
-    if px.size == 0:
-        return np.zeros(3, dtype=np.float32)
-    return px.mean(axis=0).astype(np.float32)
+# ---------------- classification helpers (train.py v3 contract) ------------
+def _lab_input(region: str, patches, scaler) -> np.ndarray:
+    """train.py's lab_vector(), on the patches this run just computed.
+
+    Single region -> 3-D skin mean; full_face -> 15-D, REGION_ORDER, gaps
+    filled with the face's own mean. A vector with no usable region falls
+    back to scaler.mean_, which equals train.py's train-split fallback: the
+    scaler was fit on rows already imputed with that mean.
+    """
+    if region != FULL_FACE:
+        p = patches[region]
+        v = cielab_mean(p.image, p.skin_mask)
+        return scaler.mean_.astype(np.float32) if v is None else v
+
+    parts = [cielab_mean(patches[r].image, patches[r].skin_mask) for r in REGION_ORDER]
+    flags = np.array([v is not None for v in parts])
+    if not flags.any():
+        return scaler.mean_.astype(np.float32)
+    parts = np.stack([np.full(3, np.nan, np.float32) if v is None else v for v in parts])
+    parts[~flags] = parts[flags].mean(axis=0)
+    return parts.reshape(-1).astype(np.float32)
+
+
+def _img_input(region: str, ssr: np.ndarray, patches) -> np.ndarray:
+    """train.py's HueViewSeq image: full_face gets the unmasked SSR face;
+    each region gets its SSR patch with every non-skin pixel zeroed."""
+    if region == FULL_FACE:
+        return ssr
+    p = patches[region]
+    return p.image * p.skin_mask[..., None]
 
 
 def _predict_one(model, scaler, img_patch: np.ndarray, lab_raw: np.ndarray) -> Dict:
@@ -118,24 +145,21 @@ def _predict_one(model, scaler, img_patch: np.ndarray, lab_raw: np.ndarray) -> D
     }
 
 
-def _classify_hueview(crop_rgb, ssr, masks, hv) -> Dict:
+def _classify_hueview(ssr, patches, hv) -> Dict:
     models, scalers = hv["models"], hv["scalers"]
     out = {"regions": {}, "full_face": None, "headline": None}
 
     all_probs = []
-    for name in ("forehead", "left_cheek", "right_cheek", "nose_bridge", "jawline"):
-        geom = masks[name]
-        patch = ssr.copy()
-        patch[~geom] = 0
-        nonblack = patch.any(axis=2)
-        lab_raw = _cielab_mean_cv2(patch, nonblack)
-        res = _predict_one(models[name], scalers[name], patch, lab_raw)
+    for name in REGION_ORDER:
+        res = _predict_one(models[name], scalers[name],
+                           _img_input(name, ssr, patches),
+                           _lab_input(name, patches, scalers[name]))
         out["regions"][name] = res
         all_probs.append(np.array(res["probabilities"], dtype=np.float64))
 
-    ff_img = ssr if HUEVIEW_FULLFACE_SSR else crop_rgb
-    ff_lab = _cielab_mean_cv2(ff_img, None)
-    ff_res = _predict_one(models["full_face"], scalers["full_face"], ff_img, ff_lab)
+    ff_res = _predict_one(models[FULL_FACE], scalers[FULL_FACE],
+                          _img_input(FULL_FACE, ssr, patches),
+                          _lab_input(FULL_FACE, patches, scalers[FULL_FACE]))
     out["full_face"] = ff_res
     all_probs.append(np.array(ff_res["probabilities"], dtype=np.float64))  # full_face isasama na sa headline
 
@@ -151,10 +175,13 @@ def _classify_hueview(crop_rgb, ssr, masks, hv) -> Dict:
     return out
 
 
-def run_hueview(crop_rgb: np.ndarray) -> Dict:
+def run_hueview(crop_rgb: np.ndarray, ssr: Optional[np.ndarray] = None) -> Dict:
+    """`ssr` lets the API pass in the SSR image it already computed for the
+    preview, so the user sees exactly the image this run analyzes."""
     t0 = time.perf_counter()
 
-    ssr = apply_ssr(crop_rgb)
+    if ssr is None:
+        ssr = compute_ssr(crop_rgb)
 
     landmarks = extract_landmarks(crop_rgb)
     if landmarks is None:
@@ -178,10 +205,10 @@ def run_hueview(crop_rgb: np.ndarray) -> Dict:
     configs = _SELECTOR.route_all(patches, image_id="inference")
     full = configs.get(FULL_FACE)
 
-    # ---- provisional SCC classification (geometric path) ----
+    # ---- SCC classification (train.py v3: HSV skin masks + skimage CIELAB) ----
     hv = load_models()["hueview"]
     is_placeholder = hv is None
-    cls = _classify_hueview(crop_rgb, ssr, masks, hv) if not is_placeholder else None
+    cls = _classify_hueview(ssr, patches, hv) if not is_placeholder else None
 
     original = crop_rgb if CIELAB_FROM_ORIGINAL else None
     region_rows = []
@@ -287,7 +314,7 @@ def run_hueview(crop_rgb: np.ndarray) -> Dict:
     return {
         "name": "HueView",
         "method": "SSR + regional segmentation",
-        "checkpoint": "no weights loaded" if is_placeholder else "loaded (provisional)",
+        "checkpoint": "no weights loaded" if is_placeholder else "loaded",
         "placeholder": is_placeholder,
         "scc": scc,
         "probabilities": probabilities,

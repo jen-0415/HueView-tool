@@ -15,8 +15,14 @@ export function useAnalysis() {
   const [detection, setDetection] = useState(null);
   const [stages, setStages] = useState({});
   const [result, setResult] = useState(null);
+  const [ssrPreview, setSsrPreview] = useState(null); // { original, ssr } data URLs
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  // When an SSR preview was shown, the result waits here until the user
+  // clicks Continue, so the normalization step is always seen.
+  const [pendingResult, setPendingResult] = useState(null);
+  const sawSsr = useRef(false);
 
   // Holds the cancel function for an in-flight analysis so leaving the
   // analyzing screen can close the SSE connection instead of letting its
@@ -29,6 +35,8 @@ export function useAnalysis() {
     setDetection(null);
     setStages({});
     setResult(null);
+    setSsrPreview(null);
+    setPendingResult(null);
     setError(null);
   }, []);
 
@@ -57,6 +65,8 @@ export function useAnalysis() {
       if (target === "confirm") {
         setStages({});
         setResult(null);
+        setSsrPreview(null);
+        setPendingResult(null);
         setError(null);
       }
     };
@@ -90,6 +100,9 @@ export function useAnalysis() {
   const run = useCallback(() => {
     setStages({});
     setError(null);
+    setSsrPreview(null);
+    setPendingResult(null);
+    sawSsr.current = false;
     goTo("analyzing");
 
     cancelAnalysis.current = analyze(
@@ -97,6 +110,10 @@ export function useAnalysis() {
       (s) => setStages((prev) => ({ ...prev, [s.key]: s })),
       (r) => {
         cancelAnalysis.current = null;
+        if (sawSsr.current) {
+          setPendingResult(r); // shown when the user clicks Continue
+          return;
+        }
         setResult(r);
         // replace: analyzing is transient, so Back from results goes to confirm
         goTo("results", { replace: true });
@@ -105,9 +122,20 @@ export function useAnalysis() {
         cancelAnalysis.current = null;
         setError(e.message);
         goTo("confirm", { replace: true });
+      },
+      (p) => {
+        sawSsr.current = true;
+        setSsrPreview(p);
       }
     );
   }, [file, goTo]);
+
+  const showResults = useCallback(() => {
+    if (!pendingResult) return;
+    setResult(pendingResult);
+    setPendingResult(null);
+    goTo("results", { replace: true });
+  }, [pendingResult, goTo]);
 
   const reset = useCallback(() => {
     cancelAnalysis.current?.();
@@ -116,5 +144,9 @@ export function useAnalysis() {
     goTo("upload");
   }, [clearAll, goTo]);
 
-  return { screen, preview, detection, stages, result, error, busy, upload, run, reset };
+  return {
+    screen, preview, detection, stages, result, ssrPreview,
+    resultReady: pendingResult !== null,
+    error, busy, upload, run, showResults, reset,
+  };
 }
