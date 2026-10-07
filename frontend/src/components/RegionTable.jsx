@@ -43,7 +43,7 @@ export default function RegionTable({ regions }) {
       <p className="px-6 py-3 text-xs text-ink-soft">
         L*a*b* per region from the Regional Configuration Selector. &ldquo;Excluded&rdquo; regions had
         too few skin pixels and are filled from the face&apos;s other regions. The Full Face row
-        summarizes the five regions; its own model still contributes to the final SCC.
+        summarizes the five regions; its own model is the sixth vote on the final SCC.
       </p>
     </Card>
   );

@@ -461,8 +461,10 @@ function DecisionPanel({ result }) {
       {hv.scc && (
         <Meaning>
           <p>
-            HueView&apos;s final class is <b>{sccText(hv)}</b>, the class with the highest mean
-            probability across the models ({pct(hv.confidence, 1)}).
+            HueView&apos;s final class is <b>{sccText(hv)}</b>, the majority vote of the six
+            models — five regions and the full face
+            {hv.votes?.[hv.scc] != null ? ` (${hv.votes[hv.scc]} of 6 votes)` : ""}
+            {hv.tied ? ", with a tie broken by the highest mean probability across the six" : ""}.
           </p>
         </Meaning>
       )}

@@ -156,12 +156,14 @@ def build_result(image_bytes: bytes, filename: str = "", state: Optional[Dict] =
 
     hueview = payload["models"]["hueview"]
     hueview["decision"] = {
-        "method": "mean_softmax",
+        "method": "majority_vote",
         "heads": list(REGION_ORDER) + ["full_face"],
         "description": (
-            "Each of the six HueView models (five regions + full face) outputs a "
-            "probability for every SCC class. The six probability vectors are "
-            "averaged; the class with the highest average is the final SCC."
+            "Each of the six HueView models (forehead, left cheek, right cheek, "
+            "nose bridge, jawline and full face) votes for the SCC class it rates "
+            "highest. The class with the most votes is the final SCC. If classes "
+            "tie on votes, the tied class with the highest mean probability across "
+            "the six models wins."
         ),
     }
     try:
