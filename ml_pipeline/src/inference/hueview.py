@@ -20,7 +20,7 @@ from typing import Dict, Optional
 
 import numpy as np
 
-from ..hueview.segment_regions import REGIONS, build_region_mask
+from ..hueview.segment_regions import build_region_masks
 from ..hueview.ssr_normalization import apply_ssr
 from ..hueview.hsv_skin_filter import filter_all_regions
 from ..hueview.region_selector import RegionalConfigurationSelector, FULL_FACE
@@ -198,10 +198,7 @@ def run_hueview(
             "Regional analysis needs the mesh, so HueView can't run on this image."
         )
 
-    masks = {
-        name: build_region_mask(landmarks, idxs, ssr.shape).astype(bool)
-        for name, idxs in REGIONS.items()
-    }
+    masks = build_region_masks(landmarks, ssr.shape)
 
     patches = filter_all_regions(
         ssr_image=ssr,

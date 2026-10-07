@@ -43,7 +43,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from ml_pipeline.src.baseline.path_resolver import resolve_image_path  # noqa: E402
-from ml_pipeline.src.hueview.segment_regions import REGIONS, build_region_mask  # noqa: E402
+from ml_pipeline.src.hueview.segment_regions import build_region_masks  # noqa: E402
 from ml_pipeline.src.hueview.hsv_skin_filter import FilterConfig, filter_all_regions, summarize  # noqa: E402
 from ml_pipeline.src.hueview.regions import encode_label_map  # noqa: E402
 
@@ -210,10 +210,7 @@ def process_one(args):
 
     ssr_rgb = cv2.cvtColor(ssr_bgr, cv2.COLOR_BGR2RGB)
 
-    geometric_masks = {
-        name: build_region_mask(landmarks_px, idx, ssr_rgb.shape).astype(bool)
-        for name, idx in REGIONS.items()
-    }
+    geometric_masks = build_region_masks(landmarks_px, ssr_rgb.shape)
 
     reference_rgb = None
     if CONFIG_OBJ.hsv_source == "original":

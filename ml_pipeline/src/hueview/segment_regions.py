@@ -68,6 +68,44 @@ def build_region_mask(landmarks_px, region_indices, shape):
     return mask
 
 
+# MediaPipe's official FaceLandmarksConnections groups, used to trim regions to
+# the anatomical bounds in Table 4 of the manuscript.
+LEFT_EYEBROW = [276, 282, 283, 285, 293, 295, 296, 300, 334, 336]
+RIGHT_EYEBROW = [46, 52, 53, 55, 63, 65, 66, 70, 105, 107]
+LIPS = [0, 13, 14, 17, 37, 39, 40, 61, 78, 80, 81, 82, 84, 87, 88, 91, 95, 146, 178,
+        181, 185, 191, 267, 269, 270, 291, 308, 310, 311, 312, 314, 317, 318, 321, 324,
+        375, 402, 405, 409, 415]
+TRIM_PAD_PX = 3  # dilation of the brow/lip hulls; checked in qa_manuscript_strict.py
+
+
+def _feature_mask(landmarks_px, groups, shape, pad=TRIM_PAD_PX):
+    mask = np.zeros(shape[:2], dtype=np.uint8)
+    for idxs in groups:
+        mask |= build_region_mask(landmarks_px, idxs, shape)
+    if pad > 0:
+        k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * pad + 1, 2 * pad + 1))
+        mask = cv2.dilate(mask, k)
+    return mask.astype(bool)
+
+
+def build_region_masks(landmarks_px, shape):
+    """All five Table 4 region masks, {name: (H, W) bool}.
+
+    Convex hulls of REGIONS, then trimmed to the manuscript's anatomical bounds:
+      forehead  "Above the brow line" -- drops the eyebrows and everything below
+                them in the same columns.
+      jawline   "avoiding lips"       -- drops the lips and everything above
+                them in the same columns.
+    """
+    masks = {name: build_region_mask(landmarks_px, idxs, shape).astype(bool)
+             for name, idxs in REGIONS.items()}
+    brows = _feature_mask(landmarks_px, [LEFT_EYEBROW, RIGHT_EYEBROW], shape)
+    lips = _feature_mask(landmarks_px, [LIPS], shape)
+    masks["forehead"] &= ~np.maximum.accumulate(brows, axis=0)
+    masks["jawline"] &= ~np.maximum.accumulate(lips[::-1], axis=0)[::-1]
+    return masks
+
+
 def get_filename_variants(filename):
     """Generates path variations considering clean names and extension mismatches (.png -> .bmp/.jpg)."""
     clean_filename = re.sub(r"\s*\(\d+\)(?=\.[^.]+$)", "", filename)
@@ -150,8 +188,7 @@ def process_one(args):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     outputs = []
-    for region_name, region_indices in REGIONS.items():
-        mask = build_region_mask(landmarks_px, region_indices, ssr_image.shape)
+    for region_name, mask in build_region_masks(landmarks_px, ssr_image.shape).items():
         masked_image = ssr_image.copy()
         masked_image[mask == 0] = 0
 
