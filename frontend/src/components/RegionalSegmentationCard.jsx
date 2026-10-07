@@ -33,8 +33,8 @@ export function SegmentationFigures({ hueview }) {
 
   return (
     <div className="px-6 py-5 grid grid-cols-1 sm:grid-cols-[auto_auto_1fr] gap-6 items-start">
-      <Figure n="01" src={seg.geometric} caption="Geometric regions (landmark convex hulls)" />
-      <Figure n="02" src={seg.skin} caption="Skin kept by the HSV filter (removed pixels darkened)" />
+      <Figure n="01" src={seg.geometric} caption="Face areas outlined from the mapped points" />
+      <Figure n="02" src={seg.skin} caption="Skin that was kept (removed parts darkened)" />
       <ul className="text-[13px] space-y-2 self-center">
         {regions
           .filter((r) => seg.colors[r.region_key])
@@ -43,7 +43,7 @@ export function SegmentationFigures({ hueview }) {
               <span className="w-3 h-3 rounded-sm" style={{ background: colorOf(r.region_key) }} />
               <span>{r.name}</span>
               <span className="font-mono text-[11px] text-ink-soft">
-                {r.pixels.toLocaleString()} / {seg.geometric_pixels[r.region_key].toLocaleString()} px skin
+                {r.pixels.toLocaleString()} / {seg.geometric_pixels[r.region_key].toLocaleString()} skin pixels
               </span>
             </li>
           ))}
@@ -59,7 +59,7 @@ export function RegionPredictions({ hueview }) {
 
   return (
       <div className="px-6 py-5">
-        <div className="font-mono text-[11px] font-semibold mb-3">What each model saw, and its SCC</div>
+        <div className="font-mono text-[11px] font-semibold mb-3">What each model saw, and what it picked</div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           {regions.map((r) => (
             <div key={r.region_key ?? r.name} className="rounded-xl border border-line-soft p-2">
@@ -118,7 +118,7 @@ export function DecisionTable({ hueview }) {
   return (
     <div className="border-t border-line-soft">
       <div className="px-6 pt-4">
-        <div className="font-mono text-[11px] font-semibold">04 · How the final SCC is decided</div>
+        <div className="font-mono text-[11px] font-semibold">How the final answer is chosen</div>
         <p className="text-[12px] text-ink-soft mt-1 max-w-3xl">{hueview.decision?.description}</p>
       </div>
       <div className="overflow-x-auto px-6 py-4">
@@ -149,7 +149,7 @@ export function DecisionTable({ hueview }) {
             })}
             {final && (
               <tr className="border-t-2 border-accent bg-blush-soft">
-                <td className="px-3 py-2 font-semibold text-accent">Mean of 6 → final</td>
+                <td className="px-3 py-2 font-semibold text-accent">Average of 6 → final</td>
                 {final.map((p, i) => (
                   <td
                     key={i}
@@ -165,8 +165,8 @@ export function DecisionTable({ hueview }) {
       </div>
       {hueview.scc && (
         <p className="px-6 pb-5 text-[13px]">
-          Final HueView SCC: <span className="font-semibold text-accent">{hueview.scc} — {sccLabel(hueview.scc)}</span>
-          <span className="text-ink-soft"> (highest mean probability, {pct(hueview.confidence)})</span>
+          HueView&apos;s final answer: <span className="font-semibold text-accent">{hueview.scc} — {sccLabel(hueview.scc)}</span>
+          <span className="text-ink-soft"> (highest average score, {pct(hueview.confidence)})</span>
         </p>
       )}
     </div>

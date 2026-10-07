@@ -137,14 +137,13 @@ def _ssr_steps(crop_rgb: np.ndarray, ssr_rgb: np.ndarray) -> Optional[list]:
     gray = lambda a: cv2.cvtColor(np.clip(a, 0, 255).astype(np.uint8), cv2.COLOR_GRAY2RGB)
     lo, hi = np.percentile(retinex, [1, 99])
     refl = (retinex - lo) / max(hi - lo, 1e-6) * 255     # contrast-stretched for viewing
-    sigma = f"{ssr_mod.SIGMA:g}"
     return [
-        {"label": "Preprocessed input I", "image": _to_data_url(crop_rgb)},
-        {"label": f"Illumination L = Gσ * Y (σ = {sigma})", "image": _to_data_url(gray(illum - eps))},
-        {"label": "Reflectance r = log Y − log L", "image": _to_data_url(gray(refl))},
-        {"label": f"Gain g ({gain.min():.2f}–{gain.max():.2f}): blue darker, red brighter",
+        {"label": "Your cropped face", "image": _to_data_url(crop_rgb)},
+        {"label": "Estimated lighting (a heavy blur of the face)", "image": _to_data_url(gray(illum - eps))},
+        {"label": "Face detail with the lighting taken out", "image": _to_data_url(gray(refl))},
+        {"label": "Brightness change per area (blue = darkened, red = brightened)",
          "image": _to_data_url(_gain_to_rgb(gain))},
-        {"label": "SSR output I′ = g · I", "image": _to_data_url(ssr_rgb)},
+        {"label": "Corrected face", "image": _to_data_url(ssr_rgb)},
     ]
 
 
@@ -159,9 +158,9 @@ def build_result(image_bytes: bytes, filename: str = "", state: Optional[Dict] =
         "method": "mean_softmax",
         "heads": list(REGION_ORDER) + ["full_face"],
         "description": (
-            "Each of the six HueView models (five regions + full face) outputs a "
-            "probability for every SCC class. The six probability vectors are "
-            "averaged; the class with the highest average is the final SCC."
+            "Each of the six HueView models (five face regions and the full face) "
+            "gives a score for every skin color class. The six scores for each "
+            "class are averaged, and the class with the highest average wins."
         ),
     }
     try:

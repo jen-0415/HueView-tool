@@ -12,7 +12,7 @@ export default function IlluminationCard({ illumination }) {
     <Card>
       <div className="px-5 py-4">
         <div className="font-mono text-[10px] tracking-widest text-ink-soft">
-          ILLUMINATION BIN
+          LIGHTING LEVEL
         </div>
 
         <div className="flex items-baseline gap-2 mt-1">
@@ -58,9 +58,9 @@ export default function IlluminationCard({ illumination }) {
         </ul>
 
         <p className="text-[11px] text-ink-soft leading-snug mt-3">
-          Bin {illumination.bin_index} of {bins.length}, assigned by k-means on
-          mean luminance. Used to stratify evaluation, not to alter the
-          prediction.
+          Group {illumination.bin_index} of {bins.length}, based on the
+          photo&apos;s average brightness. Used to compare results across
+          lighting conditions. It does not change the result.
         </p>
       </div>
     </Card>

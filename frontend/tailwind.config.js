@@ -15,7 +15,7 @@ export default {
       },
       fontFamily: {
         display: ["'Playfair Display'", "Georgia", "serif"],
-        sans: ["Inter", "system-ui", "sans-serif"],
+        sans: ["'Nunito Sans'", "system-ui", "sans-serif"],
         mono: ["'IBM Plex Mono'", "ui-monospace", "monospace"],
       },
     },
