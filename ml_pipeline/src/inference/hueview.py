@@ -175,9 +175,17 @@ def _classify_hueview(ssr, patches, hv) -> Dict:
     return out
 
 
-def run_hueview(crop_rgb: np.ndarray, ssr: Optional[np.ndarray] = None) -> Dict:
+def run_hueview(
+    crop_rgb: np.ndarray,
+    ssr: Optional[np.ndarray] = None,
+    capture: Optional[Dict] = None,
+) -> Dict:
     """`ssr` lets the API pass in the SSR image it already computed for the
-    preview, so the user sees exactly the image this run analyzes."""
+    preview, so the user sees exactly the image this run analyzes.
+
+    `capture`, if given, receives the arrays this run used (SSR image,
+    geometric masks, Phase 7.4 patches) so the API can visualize the
+    segmentation without recomputing it. The returned dict is unaffected."""
     t0 = time.perf_counter()
 
     if ssr is None:
@@ -201,6 +209,9 @@ def run_hueview(crop_rgb: np.ndarray, ssr: Optional[np.ndarray] = None) -> Dict:
         config=HSV_CONFIG,
         reference_image=crop_rgb,
     )
+
+    if capture is not None:
+        capture.update(ssr=ssr, masks=masks, patches=patches)
 
     configs = _SELECTOR.route_all(patches, image_id="inference")
     full = configs.get(FULL_FACE)

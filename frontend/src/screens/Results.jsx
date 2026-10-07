@@ -4,6 +4,7 @@ import ColorValuesCard from "../components/ColorValuesCard";
 import IlluminationCard from "../components/IlluminationCard";
 import UndertoneCard from "../components/UndertoneCard";
 import RegionTable from "../components/RegionTable";
+import RegionalSegmentationCard from "../components/RegionalSegmentationCard";
 import { sccLabel } from "../constants";
 
 export default function Results({ preview, result, onReset }) {
@@ -61,6 +62,10 @@ export default function Results({ preview, result, onReset }) {
 
         <ModelCard model={baseline} />
         <ModelCard model={hueview} primary />
+      </div>
+
+      <div className="mt-6">
+        <RegionalSegmentationCard hueview={hueview} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6 mt-6 items-start">

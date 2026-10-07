@@ -23,7 +23,7 @@ import numpy as np
 
 from ..inference.pipeline import classify_image
 from ..inference.preprocess import preprocess_image, NoFaceDetected  # noqa: F401
-from ..inference.hueview import compute_ssr
+from ..inference.hueview import compute_ssr, _img_input
 from ..inference.illumination import classify_illumination
 from ..inference.models import models_loaded as _models_loaded
 from ..hueview import ssr_normalization as ssr_mod
@@ -151,8 +151,103 @@ def _ssr_steps(crop_rgb: np.ndarray, ssr_rgb: np.ndarray) -> Optional[list]:
 
 
 def build_result(image_bytes: bytes, filename: str = "", state: Optional[Dict] = None) -> Dict:
-    """The full dual-model payload, from the real pipeline."""
-    return classify_image(image_bytes, filename, **(state or {}))
+    """The full dual-model payload, from the real pipeline, plus the HueView
+    segmentation visuals and a description of how its final SCC is chosen."""
+    capture: Dict = {}
+    payload = classify_image(image_bytes, filename, **(state or {}), capture=capture)
+
+    hueview = payload["models"]["hueview"]
+    hueview["decision"] = {
+        "method": "mean_softmax",
+        "heads": list(REGION_ORDER) + ["full_face"],
+        "description": (
+            "Each of the six HueView models (five regions + full face) outputs a "
+            "probability for every SCC class. The six probability vectors are "
+            "averaged; the class with the highest average is the final SCC."
+        ),
+    }
+    try:
+        crop = (state or {}).get("crop")
+        if crop is None:
+            crop, _ = preprocess_image(image_bytes)
+        hueview["segmentation"] = _segmentation_visuals(crop, capture)
+    except Exception:
+        # Display extra only -- never fail an analysis over a picture.
+        log.exception("Segmentation visuals failed")
+        hueview["segmentation"] = None
+    return payload
+
+
+# Display colours per region (RGB), also sent to the UI for its legend.
+REGION_COLORS = {
+    "forehead": (245, 158, 66),
+    "left_cheek": (52, 168, 140),
+    "right_cheek": (88, 120, 220),
+    "nose_bridge": (214, 72, 160),
+    "jawline": (120, 180, 40),
+}
+
+
+def _overlay(base: np.ndarray, masks: Dict[str, np.ndarray], alpha: float = 0.5,
+             outlines: Optional[Dict[str, np.ndarray]] = None) -> np.ndarray:
+    out = base.astype(np.float64)
+    for name, m in masks.items():
+        out[m] = (1 - alpha) * out[m] + alpha * np.array(REGION_COLORS[name])
+    out = np.clip(out, 0, 255).astype(np.uint8)
+    for name, m in (outlines or {}).items():
+        contours, _ = cv2.findContours(m.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
+        cv2.drawContours(out, contours, -1, REGION_COLORS[name], 1)
+    return out
+
+
+def _zoom_to(img: np.ndarray, mask: np.ndarray, size: int = 160, pad: int = 6) -> np.ndarray:
+    """Crop to the mask's bounding box (letterboxed) so a small region is legible."""
+    ys, xs = np.where(mask)
+    if len(ys) == 0:
+        return np.zeros((size, size, 3), np.uint8)
+    y0, y1 = max(0, ys.min() - pad), min(img.shape[0], ys.max() + pad + 1)
+    x0, x1 = max(0, xs.min() - pad), min(img.shape[1], xs.max() + pad + 1)
+    sub = img[y0:y1, x0:x1]
+    s = size / max(sub.shape[:2])
+    sub = cv2.resize(sub, (max(1, int(sub.shape[1] * s)), max(1, int(sub.shape[0] * s))),
+                     interpolation=cv2.INTER_NEAREST)
+    canvas = np.zeros((size, size, 3), np.uint8)
+    oy, ox = (size - sub.shape[0]) // 2, (size - sub.shape[1]) // 2
+    canvas[oy:oy + sub.shape[0], ox:ox + sub.shape[1]] = sub
+    return canvas
+
+
+def _segmentation_visuals(crop: np.ndarray, capture: Dict) -> Dict:
+    """
+    Pictures of what HueView's classification actually used, built from the
+    arrays run_hueview() captured -- nothing is recomputed:
+      * geometric: Phase 7.3 landmark convex-hull regions on the crop
+      * skin:      pixels kept by Phase 7.4's HSV filter (removed ones greyed)
+      * inputs:    each model's exact image input (skin-masked SSR patch,
+                   zoomed to its region; unmasked SSR face for full_face)
+    """
+    ssr, masks, patches = capture["ssr"], capture["masks"], capture["patches"]
+    skin = {n: patches[n].skin_mask for n in REGION_ORDER}
+
+    any_geom = np.zeros(crop.shape[:2], bool)
+    for n in REGION_ORDER:
+        any_geom |= masks[n]
+    any_skin = np.zeros(crop.shape[:2], bool)
+    for m in skin.values():
+        any_skin |= m
+    removed = crop.copy()
+    removed[any_geom & ~any_skin] = (removed[any_geom & ~any_skin] * 0.25).astype(np.uint8)
+
+    inputs = {n: _zoom_to(_img_input(n, ssr, patches), masks[n]) for n in REGION_ORDER}
+    inputs["full_face"] = cv2.resize(_img_input("full_face", ssr, patches), (160, 160),
+                                     interpolation=cv2.INTER_AREA)
+    return {
+        "geometric": _to_data_url(_overlay(crop, masks, 0.45, outlines=masks)),
+        "skin": _to_data_url(_overlay(removed, skin, 0.55, outlines=masks)),
+        "colors": {n: "#%02x%02x%02x" % c for n, c in REGION_COLORS.items()},
+        "inputs": {n: _to_data_url(img) for n, img in inputs.items()},
+        "geometric_pixels": {n: int(masks[n].sum()) for n in REGION_ORDER},
+    }
 
 
 def models_loaded() -> Dict[str, bool]:

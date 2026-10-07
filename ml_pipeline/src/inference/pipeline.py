@@ -58,13 +58,15 @@ def classify_image(
     crop: Optional[np.ndarray] = None,
     detection: Optional[Dict] = None,
     ssr: Optional[np.ndarray] = None,
+    capture: Optional[Dict] = None,
 ) -> Dict:
     """
     One image in, the full dual-model result out.
 
     `crop`/`detection`/`ssr` may be passed in when the caller already ran
     preprocessing and SSR (the API does, to stream the SSR preview first),
-    so MTCNN doesn't run a second time on the same upload.
+    so MTCNN doesn't run a second time on the same upload. `capture` is
+    passed through to run_hueview() for the segmentation visuals.
 
     Raises NoFaceDetected -- the API turns that into a 422.
     """
@@ -73,7 +75,7 @@ def classify_image(
 
     illumination = classify_illumination(crop)
     baseline = run_baseline(crop)
-    hueview = run_hueview(crop, ssr=ssr)
+    hueview = run_hueview(crop, ssr=ssr, capture=capture)
 
     return {
         "image": {"width": 224, "height": 224, "preview": None},
