@@ -29,7 +29,7 @@ from ..hueview.regions import REGION_ORDER, REGION_DISPLAY
 from ..hueview.undertone import compute_undertone_descriptor
 from ..hueview.train import cielab_mean
 from .config import HSV_CONFIG, CIELAB_FROM_ORIGINAL
-from .models import load_models
+from .models import checkpoint_label, load_models
 from .paths import find_landmarker
 from .preprocess import NoFaceDetected
 
@@ -325,7 +325,7 @@ def run_hueview(
     return {
         "name": "HueView",
         "method": "SSR + regional segmentation",
-        "checkpoint": "no weights loaded" if is_placeholder else "loaded",
+        "checkpoint": checkpoint_label("hueview"),
         "placeholder": is_placeholder,
         "scc": scc,
         "probabilities": probabilities,

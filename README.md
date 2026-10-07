@@ -88,8 +88,10 @@ Weights are gitignored and shared via Google Drive. Place them in `ml_pipeline/m
 
 | File | Used by |
 |---|---|
-| `baseline_effnet.keras` | the API (`src/inference/models.py`) |
-| `hueview_<region>_final.h5`, `lab_scaler_<region>_final.pkl` for forehead, left_cheek, right_cheek, nose_bridge, jawline, full_face | the API (`HUEVIEW_SUFFIX = "_final"`) |
+| `baseline_effnet_final.h5` | the API (`BASELINE_WEIGHTS_FILENAME` in `src/inference/models.py`) |
+| `hueview_<region>_<tag>.h5` + `lab_scaler_<region>_<tag>.pkl` for forehead, left_cheek, right_cheek, nose_bridge, jawline, full_face | the API (`HUEVIEW_SUFFIXES = ("_final1", "_final")`: each region loads `_final1` if both files exist, otherwise `_final`) |
+
+Currently the five regions load `_final1` and full_face falls back to `_final` (there is no `full_face_final1` yet). The UI's "ckpt" field shows which files were loaded.
 
 `src/hueview/evaluate.py` loads `baseline_effnet.h5` and takes the HueView tag from `--run-tag` (default `final`). If a model's files are missing, the API still starts and returns that model in placeholder mode (no SCC).
 
@@ -142,7 +144,7 @@ Most pipeline scripts use paths like `Path("data/processed")` relative to `ml_pi
 ## How HueView classifies an image
 
 1. MTCNN crop to 224 × 224 (same settings as Phase 2).
-2. SSR illumination normalization (`src/hueview/ssr_normalization.py`, σ = 30).
+2. SSR illumination normalization (`src/hueview/ssr_normalization.py`, σ = 50; `images_ssr/` and the current models were made with an earlier SSR).
 3. MediaPipe face mesh → five regions (forehead, cheeks, nose bridge, jawline) as landmark convex hulls.
 4. HSV skin filter inside each region (`configs/hsv_skin_thresholds.json`, decided on the original crop).
 5. Six models: one per region (skin-masked SSR patch + 3-D CIELAB) and one full-face (SSR face + 15-D CIELAB).
