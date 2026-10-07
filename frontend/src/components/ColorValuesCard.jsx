@@ -11,7 +11,7 @@ export default function ColorValuesCard({ baseline, hueview }) {
             <div className="px-6 py-4 border-b border-line-soft">
                 <div className="font-semibold">Color values</div>
                 <div className="text-xs text-ink-soft">
-                    Each pipeline reports the color space it operates in.
+                    Each pipeline shows color in the format it works with.
                 </div>
             </div>
 
@@ -20,7 +20,7 @@ export default function ColorValuesCard({ baseline, hueview }) {
                     <div className="font-mono text-[10px] tracking-widest text-ink-soft mb-1">
                         BASELINE — RGB
                     </div>
-                    <div className="text-[12px] text-ink-soft mb-4">Global RGB mean, full crop</div>
+                    <div className="text-[12px] text-ink-soft mb-4">Average color of the whole cropped photo</div>
                     <RgbBars rgb={baseline.rgb} />
                 </div>
 
@@ -29,7 +29,7 @@ export default function ColorValuesCard({ baseline, hueview }) {
                         HUEVIEW — CIELAB
                     </div>
                     <div className="text-[12px] text-ink-soft mb-4">
-                        Mean of the selected regional values
+                        Average across the face areas used
                     </div>
                     <LabBars lab={hueview.lab} />
                 </div>

@@ -12,9 +12,9 @@ export default function UndertoneCard({ baseline, hueview }) {
     return (
         <Card>
             <div className="px-6 py-4 border-b border-line-soft">
-                <div className="font-semibold">Undertone descriptor</div>
+                <div className="font-semibold">Undertone</div>
                 <div className="text-xs text-ink-soft">
-                    Each pipeline uses its own rule — compare the outputs, not the methods.
+                    Each pipeline finds undertone its own way, so compare the answers, not the methods.
                 </div>
             </div>
 
@@ -25,10 +25,10 @@ export default function UndertoneCard({ baseline, hueview }) {
 
             <p className="px-6 py-4 border-t border-line-soft text-[13px] text-ink-soft leading-relaxed">
                 {agree
-                    ? "Both pipelines land in the same undertone band."
+                    ? "Both pipelines give the same undertone."
                     : `The pipelines disagree: ${baseline.undertone.label} against ${hueview.undertone.label}.`}{" "}
-                Undertone is an exploratory chromatic descriptor, not a validated
-                classification, and it is not covered by the study's hypotheses.
+                Undertone is experimental. It hasn&apos;t been checked against confirmed labels
+                and is outside the main scope of the study.
             </p>
         </Card>
     );
@@ -50,8 +50,8 @@ function Side({ model, primary }) {
                 </span>
                 <span className="font-mono text-[12px] text-ink-soft">
                     {u.method === "rgb_ratio"
-                        ? `b ratio ${u.b_ratio}`
-                        : `mean regional hue ${u.hue_angle_deg ?? "—"}°`}
+                        ? `blue share ${u.b_ratio}`
+                        : `average hue ${u.hue_angle_deg ?? "—"}°`}
                 </span>
             </div>
 
@@ -86,11 +86,11 @@ function Side({ model, primary }) {
             {u.method === "hue_angle" && (
                 <div className="mt-4">
                     <div className="font-mono text-[10px] tracking-widest text-ink-soft mb-2">
-                        REGIONAL DISTRIBUTION
+                        ACROSS FACE AREAS
                     </div>
                     <UndertoneBar distribution={u.distribution} />
                     <p className="text-[11px] text-ink-soft mt-2">
-                        Share of the selected regions falling in each band.
+                        How many of the face areas fall under each undertone.
                     </p>
                 </div>
             )}

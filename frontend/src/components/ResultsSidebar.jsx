@@ -57,7 +57,7 @@ export default function ResultsSidebar({ stage, onPick, preview, onReset }) {
 
       {/* Desktop: full list. */}
       <Card className="hidden lg:flex p-2.5 flex-col gap-0.5">
-        <NavButton active={stage === "summary"} onClick={() => onPick("summary")} mark="★">
+        <NavButton active={stage === "summary"} onClick={() => onPick("summary")}>
           Summary
         </NavButton>
 

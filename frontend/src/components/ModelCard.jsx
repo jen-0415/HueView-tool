@@ -13,11 +13,8 @@ export default function ModelCard({ model, primary = false }) {
   return (
     <Card className={primary ? "border-accent" : ""}>
       <div className={`${head} border-b border-line-soft rounded-t-2xl px-6 py-4 flex justify-between items-start`}>
-        <div>
-          <div className="font-semibold text-[17px]">{model.name}</div>
-          <div className="text-[13px] text-ink-soft">{model.method}</div>
-        </div>
-        <div className="text-right">
+        <div className="font-semibold text-[17px]">{model.name}</div>
+        <div className="text-right -mr-3">
           <div className="font-mono text-[10px] text-ink-soft">ckpt {model.checkpoint}</div>
           {model.placeholder && (
             <div className="mt-1 inline-block rounded-full bg-warm text-warm-ink font-mono text-[9px] px-2 py-1">

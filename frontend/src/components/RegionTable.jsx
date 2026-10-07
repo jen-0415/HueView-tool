@@ -5,13 +5,13 @@ export default function RegionTable({ regions }) {
   return (
     <Card>
       <div className="px-6 py-4 border-b border-line-soft font-semibold">
-        Regional facial analysis — HueView only
+        Color by face area (HueView only)
       </div>
 
       <table className="w-full font-mono text-xs">
         <thead>
           <tr className="bg-blush">
-            {["Region", "L*", "a*", "b*", "Pixels", "Used"].map((h) => (
+            {["Area", "L*", "a*", "b*", "Skin pixels", "Used"].map((h) => (
               <th
                 key={h}
                 className="px-5 py-3 text-left font-normal tracking-widest text-[10px] text-accent"
@@ -41,9 +41,9 @@ export default function RegionTable({ regions }) {
       </table>
 
       <p className="px-6 py-3 text-xs text-ink-soft">
-        L*a*b* per region from the Regional Configuration Selector. &ldquo;Excluded&rdquo; regions had
-        too few skin pixels and are filled from the face&apos;s other regions. The Full Face row
-        summarizes the five regions; its own model is the sixth vote on the final SCC.
+        &ldquo;Excluded&rdquo; areas had too little skin to measure, so values from the other
+        areas fill in for them. The Full Face row sums up the five areas; its own model casts
+        the sixth vote on the final result.
       </p>
     </Card>
   );

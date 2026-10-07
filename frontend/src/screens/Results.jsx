@@ -78,7 +78,6 @@ export default function Results({ preview, result, ssrPreview, onReset }) {
 
 /* ---------- shared bits ---------- */
 
-const pct = (p, digits = 0) => `${(p * 100).toFixed(digits)}%`;
 const sccText = (m) => (m.scc ? `${m.scc} — ${sccLabel(m.scc)}` : "No prediction");
 
 function StageHeader({ id, title }) {
@@ -178,8 +177,8 @@ function SummaryPanel({ result, pick }) {
               .filter((m) => !m.scc)
               .map((m) => m.name)
               .join(" and ")}{" "}
-            returned no SCC prediction (model weights not loaded), so the two pipelines
-            can&apos;t be compared for this image.
+            gave no result because its model isn&apos;t loaded, so the two can&apos;t be compared
+            for this photo.
           </span>
         </div>
       )}
@@ -191,18 +190,19 @@ function SummaryPanel({ result, pick }) {
 
       <Meaning>
         <p>
-          The Baseline averages the whole original photo, including hair, background and
-          shadows. HueView corrects the lighting first, then reads only skin pixels from
-          separate face regions. Different inputs can lead to different classes.
+          The Baseline looks at the whole original photo, including hair, background and
+          shadows. HueView fixes the lighting first, then looks only at skin in separate
+          parts of the face. Because they look at different things, they can give different
+          answers.
         </p>
         <p>
-          The undertone is an <b>exploratory</b> reading and was not validated against
-          ground-truth labels.
+          The undertone is <b>experimental</b>. It has not been checked against confirmed
+          labels, so treat it as a rough guide.
         </p>
         <div className="flex flex-wrap gap-2 pt-2 items-center">
           <span className="text-[13px] text-ink-soft">See where the result comes from:</span>
           <Chip onClick={() => pick("ssr")}>03 Lighting correction →</Chip>
-          <Chip onClick={() => pick("region")}>06 Per-region SCC →</Chip>
+          <Chip onClick={() => pick("region")}>06 Region results →</Chip>
           <Chip onClick={() => pick("decision")}>07 Final decision →</Chip>
         </div>
       </Meaning>
@@ -223,15 +223,12 @@ function DetectPanel({ result, preview }) {
         />
         <div className="flex-[1_1_300px] min-w-0">
           <Happened>
-            MTCNN found the face and five key points (two eye centres, the nose tip and two
-            mouth corners). The face was then cropped and resized to {result.image.width} ×{" "}
-            {result.image.height} pixels, the input size both models expect.
+            The face was found in your photo, along with five key points: both eyes, the tip
+            of the nose and both corners of the mouth. The face was then cropped and resized to{" "}
+            {result.image.width} × {result.image.height} pixels, the size both models need.
           </Happened>
-          <Value k="Detection confidence" v={pct(d.confidence)}>
-            How sure MTCNN is that this is a face.
-          </Value>
           <Value k="Key points found" v={`${d.landmarks_found} / 5`}>
-            Used to align and crop the face.
+            Used to line up and crop the face.
           </Value>
           {d.upscaled && (
             <Value k="Upscaled" v="yes">
@@ -242,8 +239,8 @@ function DetectPanel({ result, preview }) {
       </Card>
       <Meaning>
         <p>
-          The face was found with {pct(d.confidence)} confidence and {d.landmarks_found} of 5 key
-          points, so the later stages work on the cropped face shown here.
+          {d.landmarks_found} of 5 key points were found. Every later stage works on the
+          cropped face shown here.
         </p>
       </Meaning>
     </>
@@ -264,21 +261,21 @@ function IlluminationPanel({ result }) {
   const il = result.illumination;
   return (
     <>
-      <StageHeader id="illum" title="Illumination bin" />
+      <StageHeader id="illum" title="Lighting level" />
       <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-5 items-start">
         <IlluminationCard illumination={il} />
         <Card className="p-6">
           <Happened>
-            The photo&apos;s {il.metric.toLowerCase()} was measured and compared with three
-            lighting groups found by k-means on the whole dataset. The group is used to report
-            accuracy by lighting condition. <b>It does not change the prediction.</b>
+            We measured how bright the photo is and placed it in one of three lighting groups,
+            based on all the photos in our dataset. This helps us check how well the models do
+            under different lighting. <b>It does not change the result.</b>
           </Happened>
         </Card>
       </div>
       <Meaning>
         <p>
-          This photo falls in the <b>{il.bin}</b> lighting group ({il.metric.toLowerCase()}{" "}
-          {il.value} on a {il.scale[0]}–{il.scale[1]} scale).
+          This photo falls in the <b>{il.bin}</b> lighting group (brightness {il.value} on a{" "}
+          {il.scale[0]}–{il.scale[1]} scale).
         </p>
       </Meaning>
     </>
@@ -290,20 +287,20 @@ function SsrPanel({ ssrPreview }) {
   // output; fall back to just before/after.
   const steps = ssrPreview
     ? ssrPreview.steps ?? [
-        { label: "Cropped face (original)", image: ssrPreview.original },
-        { label: "After SSR", image: ssrPreview.ssr },
+        { label: "Your cropped face", image: ssrPreview.original },
+        { label: "Corrected face", image: ssrPreview.ssr },
       ]
     : null;
 
   return (
     <>
-      <StageHeader id="ssr" title="Lighting correction (Single-Scale Retinex)" />
+      <StageHeader id="ssr" title="Lighting correction" />
       {steps ? (
         <Card className="p-6">
           <Happened>
-            SSR estimates the lighting with a heavy blur of the photo, then divides it out. What
-            remains is closer to the skin&apos;s own color, with fewer shadows and uneven
-            highlights.
+            A heavy blur of the face gives a rough picture of how the light falls on it. That
+            lighting is then taken out, which evens out shadows and bright spots and leaves
+            something closer to the skin&apos;s real color.
           </Happened>
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
             {steps.map((s, i) => (
@@ -330,10 +327,10 @@ function SsrPanel({ ssrPreview }) {
       )}
       <Meaning>
         <p>
-          HueView measures skin color on the corrected image (the last one, outlined), so a
-          shadow on one cheek is less likely to be read as darker skin. The Baseline uses the
-          original. Lighting correction can also remove some real color information, which is
-          why the study tests its effect instead of assuming it helps.
+          HueView reads skin color from the corrected face (the last image, outlined), so a
+          shadow on one cheek is less likely to be mistaken for darker skin. The Baseline uses
+          the original photo. The correction can also remove some real color, which is why the
+          study tests whether it helps instead of assuming it does.
         </p>
       </Meaning>
     </>
@@ -349,9 +346,9 @@ function SegmentationPanel({ result }) {
         <Card>
           <div className="px-6 pt-5">
             <Happened>
-              MediaPipe Face Mesh landmarks outline each region as a convex hull on the
-              lighting-corrected face, so the same areas are measured on every photo. An HSV
-              filter then removes pixels that are not skin.
+              Points mapped across the face are used to outline the same areas on every photo
+              (forehead, cheeks, nose and chin). A skin filter then removes anything that
+              isn&apos;t skin, such as eyebrows, hair or shadows.
             </Happened>
           </div>
           <SegmentationFigures hueview={hv} />
@@ -361,9 +358,9 @@ function SegmentationPanel({ result }) {
       )}
       <Meaning>
         <p>
-          Skin color is not uniform across the face. Instead of one average, HueView reads each
-          region separately, so one shadowed or covered area cannot decide the result on its
-          own.
+          Skin color isn&apos;t the same all over the face. HueView reads each area separately
+          instead of taking one average, so a single shadowed or covered area can&apos;t decide
+          the result on its own.
         </p>
       </Meaning>
     </>
@@ -381,26 +378,26 @@ function SkinPanel({ result }) {
 
   return (
     <>
-      <StageHeader id="skin" title="Skin filter and color values" />
+      <StageHeader id="skin" title="Skin pixels and color values" />
       <RegionTable regions={hueview.regions ?? []} />
       <ColorValuesCard baseline={baseline} hueview={hueview} />
       <Meaning>
         {fewest && darkest ? (
           <p>
-            {measured.length} regions kept enough skin to be measured.{" "}
-            <b>{fewest.name}</b> has the fewest skin pixels ({fewest.pixels.toLocaleString()}),
-            so it is the least reliable reading in this photo. <b>{darkest.name}</b> is the
-            darkest (L* {darkest.L}).
+            {measured.length} areas had enough skin to measure.{" "}
+            <b>{fewest.name}</b> had the least skin ({fewest.pixels.toLocaleString()} pixels),
+            so its reading is the least reliable in this photo. <b>{darkest.name}</b> is the
+            darkest area (lightness {darkest.L}).
             {excluded.length > 0 &&
               ` ${excluded.map((r) => r.name).join(", ")} ${
                 excluded.length === 1 ? "was" : "were"
               } excluded.`}
           </p>
         ) : (
-          <p>No region had enough skin pixels to measure.</p>
+          <p>No area had enough skin to measure.</p>
         )}
         <p className="text-xs text-ink-soft">
-          L* = lightness (0 black, 100 white) · a* = redness (+) · b* = yellowness (+).
+          L* = lightness (0 is black, 100 is white) · a* = how red · b* = how yellow.
         </p>
       </Meaning>
     </>
@@ -418,9 +415,9 @@ function RegionPanel({ result }) {
       <Card>
         <div className="px-6 pt-5">
           <Happened>
-            Each region&apos;s patch went through its own EfficientNetB0 model together with
-            that region&apos;s CIELAB values, and was classified into one of the six skin color
-            clusters. The percentage is how strongly that model favours its answer.
+            Each face area has its own model. It looks at that area&apos;s image and color values
+            and picks one of the six skin color classes. The percentage shows how strongly the
+            model leans toward its pick.
           </Happened>
         </div>
         <RegionPredictions hueview={hv} />
@@ -429,12 +426,12 @@ function RegionPanel({ result }) {
         <Meaning>
           <p>
             <b>
-              {agreeing.length} of {voted.length} models predicted {hv.scc}
+              {agreeing.length} of {voted.length} models picked {hv.scc}
             </b>
             .{" "}
             {agreeing.length === voted.length
-              ? "Every region reads the face the same way."
-              : `The others predicted ${[
+              ? "Every area gave the same answer."
+              : `The others picked ${[
                   ...new Set(voted.filter((r) => r.scc !== hv.scc).map((r) => r.scc)),
                 ].join(", ")}.`}
           </p>
@@ -461,10 +458,10 @@ function DecisionPanel({ result }) {
       {hv.scc && (
         <Meaning>
           <p>
-            HueView&apos;s final class is <b>{sccText(hv)}</b>, the majority vote of the six
-            models — five regions and the full face
-            {hv.votes?.[hv.scc] != null ? ` (${hv.votes[hv.scc]} of 6 votes)` : ""}
-            {hv.tied ? ", with a tie broken by the highest mean probability across the six" : ""}.
+            HueView&apos;s final answer is <b>{sccText(hv)}</b>, the class picked by the most of
+            its six models — the five face regions and the full face
+            {hv.votes?.[hv.scc] != null ? ` (${hv.votes[hv.scc]} of 6)` : ""}
+            {hv.tied ? ". It was a tie, so the class with the higher average score won" : ""}.
           </p>
         </Meaning>
       )}
@@ -506,21 +503,21 @@ function ComparePanel({ result }) {
           </thead>
           <tbody>
             <Row
-              k="Input representation"
-              a="EfficientNetB0 on the full crop + global RGB mean"
-              b="Five skin-masked SSR regional patches + SSR full face, each with CIELAB"
+              k="What it looks at"
+              a="The whole cropped photo and its average color"
+              b="Skin from five face areas plus the whole face, after lighting correction"
             />
             <Row k="Predicted class" a={sccText(baseline)} b={sccText(hueview)} highlight />
             <Row k="Color space" a="RGB" b="CIELAB" />
             <Row
-              k="Undertone rule"
-              a="Normalized RGB ratios, b-ratio threshold"
-              b="Hue angle on regional CIELAB means"
+              k="How undertone is found"
+              a="How much blue is in the average color"
+              b="The color direction (hue) of each face area"
             />
             <Row
-              k="Undertone descriptor"
-              a={`${baseline.undertone.label} (b = ${baseline.undertone.b_ratio})`}
-              b={`${hueview.undertone.label ?? "—"} (mean regional hue ${hueview.undertone.hue_angle_deg ?? "—"}°)`}
+              k="Undertone"
+              a={`${baseline.undertone.label} (blue share ${baseline.undertone.b_ratio})`}
+              b={`${hueview.undertone.label ?? "—"} (average hue ${hueview.undertone.hue_angle_deg ?? "—"}°)`}
             />
           </tbody>
         </table>
@@ -531,8 +528,8 @@ function ComparePanel({ result }) {
             {agree
               ? `For this photo, both pipelines agree on ${sccText(hueview)}.`
               : `For this photo, the pipelines disagree: ${sccText(baseline)} against ${sccText(hueview)}.`}{" "}
-            They see different inputs (the whole photo vs corrected skin regions), so they can
-            disagree on individual faces.
+            They look at different things (the whole photo vs corrected skin areas), so they can
+            disagree on some faces.
           </p>
         </Meaning>
       )}
