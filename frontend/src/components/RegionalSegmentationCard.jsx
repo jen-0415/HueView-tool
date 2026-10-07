@@ -5,11 +5,6 @@ import { SCC, sccLabel } from "../constants";
 // which pixels survived the skin filter, what each of the six models saw and
 // predicted, and how those six predictions become the final SCC.
 export default function RegionalSegmentationCard({ hueview }) {
-  const seg = hueview.segmentation;
-  const regions = hueview.regions ?? [];
-  const hasCls = regions.some((r) => Array.isArray(r.probabilities));
-  const colorOf = (key) => seg?.colors?.[key] ?? "#C9145C";
-
   return (
     <Card>
       <div className="px-6 py-4 border-b border-line-soft">
@@ -18,29 +13,53 @@ export default function RegionalSegmentationCard({ hueview }) {
           MediaPipe landmarks → convex-hull regions → HSV skin filter → one model per region.
         </div>
       </div>
+      <SegmentationFigures hueview={hueview} />
+      <RegionPredictions hueview={hueview} />
+      <DecisionTable hueview={hueview} />
+    </Card>
+  );
+}
 
-      {seg && (
-        <div className="px-6 py-5 grid grid-cols-1 sm:grid-cols-[auto_auto_1fr] gap-6 items-start">
-          <Figure n="01" src={seg.geometric} caption="Geometric regions (landmark convex hulls)" />
-          <Figure n="02" src={seg.skin} caption="Skin kept by the HSV filter (removed pixels darkened)" />
-          <ul className="text-[13px] space-y-2 self-center">
-            {regions
-              .filter((r) => seg.colors[r.region_key])
-              .map((r) => (
-                <li key={r.region_key} className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-sm" style={{ background: colorOf(r.region_key) }} />
-                  <span>{r.name}</span>
-                  <span className="font-mono text-[11px] text-ink-soft">
-                    {r.pixels.toLocaleString()} / {seg.geometric_pixels[r.region_key].toLocaleString()} px skin
-                  </span>
-                </li>
-              ))}
-          </ul>
-        </div>
-      )}
+// The pieces below are exported separately so the Results stage panels can
+// show one step at a time. Each renders nothing when its data is missing.
 
-      <div className="px-6 pb-5">
-        <div className="font-mono text-[11px] font-semibold mb-3">03 · What each model saw, and its SCC</div>
+const colorFor = (seg) => (key) => seg?.colors?.[key] ?? "#C9145C";
+
+export function SegmentationFigures({ hueview }) {
+  const seg = hueview.segmentation;
+  const regions = hueview.regions ?? [];
+  const colorOf = colorFor(seg);
+  if (!seg) return null;
+
+  return (
+    <div className="px-6 py-5 grid grid-cols-1 sm:grid-cols-[auto_auto_1fr] gap-6 items-start">
+      <Figure n="01" src={seg.geometric} caption="Geometric regions (landmark convex hulls)" />
+      <Figure n="02" src={seg.skin} caption="Skin kept by the HSV filter (removed pixels darkened)" />
+      <ul className="text-[13px] space-y-2 self-center">
+        {regions
+          .filter((r) => seg.colors[r.region_key])
+          .map((r) => (
+            <li key={r.region_key} className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-sm" style={{ background: colorOf(r.region_key) }} />
+              <span>{r.name}</span>
+              <span className="font-mono text-[11px] text-ink-soft">
+                {r.pixels.toLocaleString()} / {seg.geometric_pixels[r.region_key].toLocaleString()} px skin
+              </span>
+            </li>
+          ))}
+      </ul>
+    </div>
+  );
+}
+
+export function RegionPredictions({ hueview }) {
+  const seg = hueview.segmentation;
+  const regions = hueview.regions ?? [];
+  const colorOf = colorFor(seg);
+
+  return (
+      <div className="px-6 py-5">
+        <div className="font-mono text-[11px] font-semibold mb-3">What each model saw, and its SCC</div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           {regions.map((r) => (
             <div key={r.region_key ?? r.name} className="rounded-xl border border-line-soft p-2">
@@ -72,9 +91,6 @@ export default function RegionalSegmentationCard({ hueview }) {
           ))}
         </div>
       </div>
-
-      {hasCls && <DecisionTable hueview={hueview} regions={regions} />}
-    </Card>
   );
 }
 
@@ -92,7 +108,9 @@ function Figure({ n, src, caption }) {
 
 // Every model's probability vector, then their mean -- the final SCC is the
 // largest mean. Shown in full so the decision can be checked by eye.
-function DecisionTable({ hueview, regions }) {
+export function DecisionTable({ hueview }) {
+  const regions = (hueview.regions ?? []).filter((r) => Array.isArray(r.probabilities));
+  if (regions.length === 0) return null;
   const final = hueview.probabilities;
   const pct = (p) => (p == null ? "—" : `${(p * 100).toFixed(1)}%`);
   const argmax = (ps) => ps.indexOf(Math.max(...ps));

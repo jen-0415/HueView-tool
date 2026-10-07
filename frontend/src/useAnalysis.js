@@ -14,14 +14,11 @@ export function useAnalysis() {
   const [preview, setPreview] = useState(null);
   const [detection, setDetection] = useState(null);
   const [result, setResult] = useState(null);
-  const [ssrPreview, setSsrPreview] = useState(null); // { original, ssr } data URLs
+  // { original, ssr, steps } data URLs, streamed before the result and shown
+  // later in the Results screen's lighting-correction stage.
+  const [ssrPreview, setSsrPreview] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
-
-  // When an SSR preview was shown, the result waits here until the user
-  // clicks Continue, so the normalization step is always seen.
-  const [pendingResult, setPendingResult] = useState(null);
-  const sawSsr = useRef(false);
 
   // Holds the cancel function for an in-flight analysis so leaving the
   // analyzing screen can close the SSE connection instead of letting its
@@ -34,7 +31,6 @@ export function useAnalysis() {
     setDetection(null);
     setResult(null);
     setSsrPreview(null);
-    setPendingResult(null);
     setError(null);
   }, []);
 
@@ -63,7 +59,6 @@ export function useAnalysis() {
       if (target === "confirm") {
         setResult(null);
         setSsrPreview(null);
-        setPendingResult(null);
         setError(null);
       }
     };
@@ -97,19 +92,13 @@ export function useAnalysis() {
   const run = useCallback(() => {
     setError(null);
     setSsrPreview(null);
-    setPendingResult(null);
-    sawSsr.current = false;
     goTo("analyzing");
 
     cancelAnalysis.current = analyze(
       file,
-      () => {}, // per-stage progress isn't shown; the SSR preview is the progress view
+      () => {}, // per-stage progress isn't shown
       (r) => {
         cancelAnalysis.current = null;
-        if (sawSsr.current) {
-          setPendingResult(r); // shown when the user clicks Continue
-          return;
-        }
         setResult(r);
         // replace: analyzing is transient, so Back from results goes to confirm
         goTo("results", { replace: true });
@@ -119,19 +108,9 @@ export function useAnalysis() {
         setError(e.message);
         goTo("confirm", { replace: true });
       },
-      (p) => {
-        sawSsr.current = true;
-        setSsrPreview(p);
-      }
+      (p) => setSsrPreview(p)
     );
   }, [file, goTo]);
-
-  const showResults = useCallback(() => {
-    if (!pendingResult) return;
-    setResult(pendingResult);
-    setPendingResult(null);
-    goTo("results", { replace: true });
-  }, [pendingResult, goTo]);
 
   const reset = useCallback(() => {
     cancelAnalysis.current?.();
@@ -142,7 +121,6 @@ export function useAnalysis() {
 
   return {
     screen, preview, detection, result, ssrPreview,
-    resultReady: pendingResult !== null,
-    error, busy, upload, run, showResults, reset,
+    error, busy, upload, run, reset,
   };
 }
