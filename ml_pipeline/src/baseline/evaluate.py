@@ -53,13 +53,12 @@ def confusion_matrix(y_true, y_pred, n=NUM_CLASSES):
 
 
 def per_class_metrics(cm):
-    """Precision, recall, F1 and support per class, computed from the matrix."""
+    """Precision, recall, and F1 per class, computed from the matrix."""
     out = {}
     for i, cls in enumerate(SCC_CLASSES):
         tp = int(cm[i, i])
         fp = int(cm[:, i].sum() - tp)
         fn = int(cm[i, :].sum() - tp)
-        support = int(cm[i, :].sum())
 
         precision = tp / (tp + fp) if (tp + fp) else 0.0
         recall = tp / (tp + fn) if (tp + fn) else 0.0
@@ -69,7 +68,6 @@ def per_class_metrics(cm):
             "precision": round(precision, 4),
             "recall": round(recall, 4),
             "f1": round(f1, 4),
-            "support": support,
             "true_positives": tp,
             "false_positives": fp,
             "false_negatives": fn,
@@ -80,6 +78,7 @@ def per_class_metrics(cm):
 def aggregate(per_class, cm):
     """Macro (unweighted) and weighted averages."""
     total = int(cm.sum())
+    class_supports = {SCC_CLASSES[i]: int(cm[i, :].sum()) for i in range(len(SCC_CLASSES))}
     accuracy = float(np.trace(cm) / total) if total else 0.0
 
     macro = {
@@ -89,7 +88,7 @@ def aggregate(per_class, cm):
     weighted = {}
     for m in ("precision", "recall", "f1"):
         weighted[m] = round(float(
-            sum(per_class[c][m] * per_class[c]["support"] for c in SCC_CLASSES) / total
+            sum(per_class[c][m] * class_supports[c] for c in SCC_CLASSES) / total
         ), 4) if total else 0.0
 
     return {"accuracy": round(accuracy, 4), "macro": macro, "weighted": weighted}
@@ -214,14 +213,14 @@ def main():
     print("\n" + "-" * 68)
     print("PER CLASS")
     print("-" * 68)
-    print(f"\n  {'class':<8} {'prec':>7} {'recall':>8} {'f1':>7} {'support':>8}")
+    print(f"\n  {'class':<8} {'prec':>7} {'recall':>8} {'f1':>7}")
     for cls in SCC_CLASSES:
         m = per_class[cls]
         print(f"  {cls:<8} {m['precision']:>7.4f} {m['recall']:>8.4f} "
-              f"{m['f1']:>7.4f} {m['support']:>8}")
+              f"{m['f1']:>7.4f}")
 
     weak = [c for c in SCC_CLASSES if per_class[c]["recall"] < 0.5
-            and per_class[c]["support"] > 0]
+            and cm[SCC_CLASSES.index(c), :].sum() > 0]
     if weak:
         print(f"\n  Recall below 0.50 for: {', '.join(weak)}")
         print("  The model is missing most true examples of these classes.")

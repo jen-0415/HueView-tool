@@ -347,7 +347,6 @@ def per_class_table(y_true, y_pred):
     kw = dict(labels=LABELS, average=None, zero_division=0)
     return pd.DataFrame({
         "SCC": LABELS,
-        "support": [int((y_true == c).sum()) for c in LABELS],
         "precision": precision_score(y_true, y_pred, **kw),
         "recall": recall_score(y_true, y_pred, **kw),
         "f1": f1_score(y_true, y_pred, **kw),

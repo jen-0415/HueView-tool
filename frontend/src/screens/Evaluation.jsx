@@ -266,7 +266,7 @@ function PerClassTable({ rows, groupKey }) {
         <tr className="bg-blush">
           <th className={th}>{groupKey}</th>
           <th className={th}>Class</th>
-          {["TP", "TN", "FP", "FN", "Support"].map((k) => <th key={k} className={thR}>{k}</th>)}
+          {["TP", "TN", "FP", "FN"].map((k) => <th key={k} className={thR}>{k}</th>)}
           <th className={thR}>Precision</th>
           <th className={thR}>Recall</th>
           <th className={thR}>F1</th>
@@ -277,7 +277,7 @@ function PerClassTable({ rows, groupKey }) {
           <tr key={`${r[groupKey]}-${r.Class}`} className="border-t border-line-soft">
             <td className="px-3 py-1.5">{r[groupKey]}</td>
             <td className="px-3 py-1.5">{r.Class}</td>
-            {["TP", "TN", "FP", "FN", "Support"].map((k) => (
+            {["TP", "TN", "FP", "FN"].map((k) => (
               <td key={k} className="px-3 py-1.5 text-right">{r[k]}</td>
             ))}
             <td className="px-3 py-1.5 text-right">{pct(r.Precision)}</td>

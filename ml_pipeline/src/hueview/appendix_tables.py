@@ -74,7 +74,7 @@ def per_class(y_true, y_pred) -> pd.DataFrame:
         r = tp / (tp + fn) if tp + fn else 0.0
         f = 2 * p * r / (p + r) if p + r else 0.0
         rows.append({"Class": f"SCC-{k}", "TP": tp, "TN": tn, "FP": fp, "FN": fn,
-                     "Support": tp + fn, "Precision": p, "Recall": r, "F1-Score": f})
+                     "Precision": p, "Recall": r, "F1-Score": f})
     return pd.DataFrame(rows)
 
 
