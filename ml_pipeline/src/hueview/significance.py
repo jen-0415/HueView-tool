@@ -51,12 +51,12 @@ confirm with the adviser): H01 and H02 are rejected for a metric when at
 least one bin / pair is significant at its Bonferroni-adjusted level; H02
 accuracy is rejected when Cochran's Q is significant.
 
-HueView prediction used for H01/H03: hv_full_face, which evaluate.py builds as
-the manuscript defines Full Face (Fused Classification & Output): majority vote
-of the five region-specific predictions, ties to the class with the highest
-mean softmax across the five. The same column is the Full Face configuration
-in H02. A record without the hv_<region>_p1..p6 softmax columns predates that
-rule (its hv_full_face came from a separately trained model) and is refused.
+HueView prediction used for H01/H03: hv_final, the manuscript's final SCC
+(Fused Classification & Output): majority vote over the six configurations'
+predictions, ties to the class with the highest mean softmax across the six.
+H02 compares the six configurations themselves; its Full Face is hv_full_face,
+the separately trained whole-face classifier. A record without hv_final
+predates that rule and is refused.
 """
 from __future__ import annotations
 
@@ -308,14 +308,11 @@ def main():
     for c in [need[0], need[2]] + need[3:]:
         assert rec[c].between(1, N_CLASSES).all(), f"{c} has labels outside 1..{N_CLASSES}"
 
-    prob_cols = [f"hv_{r}_p{k}" for r in REGIONS if r != "full_face"
-                 for k in range(1, N_CLASSES + 1)]
-    assert set(prob_cols) <= set(rec.columns), (
-        f"{RECORD_CSV.name} has no per-region softmax columns, so its hv_full_face is "
-        "not the manuscript's five-region vote - re-run evaluate.py")
-    hv_col = "hv_full_face"
-    hv_note = ("HueView = Full Face, majority vote of the five region predictions "
-               "with mean-softmax tie-break (hv_full_face)")
+    assert "hv_final" in rec.columns and rec["hv_final"].between(1, N_CLASSES).all(), (
+        f"{RECORD_CSV.name} has no hv_final (the six-way vote) - re-run evaluate.py")
+    hv_col = "hv_final"
+    hv_note = ("HueView = final SCC, majority vote of the six configurations "
+               "with mean-softmax tie-break (hv_final)")
     print(f"[sop4] {hv_note}")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)

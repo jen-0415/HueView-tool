@@ -347,7 +347,7 @@ def run_hueview(
                 **cls_r,
             })
 
-    # ---- headline SCC = Full Face: majority vote of the 5 regional heads (tie: highest mean softmax) ----
+    # ---- headline SCC: majority vote of the 6 configurations (tie: highest mean softmax) ----
     head = cls["headline"] if cls else {}
     scc, probabilities = head.get("scc"), head.get("probabilities")
     confidence, margin = head.get("confidence"), head.get("margin")

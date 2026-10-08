@@ -19,7 +19,7 @@ Phase 12 should read ONLY the per-image record and never re-run a model.
 Run from HueView-tool/ (train.py uses relative imports, so -m is required):
 
     python -m ml_pipeline.src.hueview.evaluate
-    python -m ml_pipeline.src.hueview.evaluate --primary full_face --run-tag final
+    python -m ml_pipeline.src.hueview.evaluate --run-tag final1
 
 How this matches train.py v3 — the HueView path reuses train.py's OWN code, so
 test inputs are built exactly the way training inputs were:
@@ -30,7 +30,8 @@ test inputs are built exactly the way training inputs were:
   * Images with no usable region are imputed with the TRAIN-split mean, via
     train.impute_from_train — the same fallback validation used.
   * Scaler: lab_scaler_<region>_<run_tag>.pkl, fit on TRAIN in train.py.
-  * Models: hueview_<region>_<run_tag>.h5 (ModelCheckpoint best val_accuracy).
+  * Models: hueview_<region>_<run_tag>.h5 for all six configurations
+    (ModelCheckpoint best validation macro F1).
 
 Baseline:
   * Reads the ORIGINAL (non-SSR) faces under data/processed/images/, because
@@ -42,11 +43,16 @@ Checks before anything runs:
   * test_hueview_usable.csv is a subset of baseline_rgb_test.csv, so both
     models are scored on identical images (required for paired McNemar).
 
-Full Face (manuscript, Fused Classification & Output): majority vote over the
-five region-specific predictions; a tie goes to the class with the highest
-mean softmax probability across the five regions. It is NOT a separately
-trained model, so hueview_full_face_*.h5 is not loaded. Each region's softmax
-is saved in the record (hv_<region>_p1..p6) so the vote can be re-derived.
+Six configurations (manuscript, Stage 4 and Fused Classification & Output):
+the five facial regions plus Full Face, a separately trained whole-face
+classifier (SSR face + 15-value CIELAB profile). In the record:
+  * hv_<config>        each configuration's own prediction (SOP 3, H02);
+                       hv_full_face is the Full Face model's prediction.
+  * hv_final           HueView's final SCC: majority vote over the six
+                       predictions, a tie going to the tied class with the
+                       highest mean softmax across the six (SOP 2, H01, H03).
+  * hv_<config>_p1..p6 each configuration's softmax, so the vote can be
+                       re-derived.
 
 Undertone: hue angle per facial region from the RAW (un-imputed) CIELAB mean;
 majority vote across the FIVE facial regions only (full_face excluded), and a
@@ -71,7 +77,7 @@ from sklearn.metrics import (accuracy_score, confusion_matrix, f1_score,
                              precision_score, recall_score)
 from tensorflow import keras
 
-from .train import (FNAME_COL, IMG_SIZE, LABEL_COL, MODEL_DIR, N_CLASSES,
+from .train import (FNAME_COL, FULL_FACE, IMG_SIZE, LABEL_COL, MODEL_DIR, N_CLASSES,
                     REGION_ORDER, REGIONS, RESULT_DIR, SPLIT_DIR, HueViewSeq,
                     _fname_rel, cache_lab, impute_from_train)
 
@@ -80,6 +86,8 @@ BATCH = 32
 
 # Undertone majority vote: the five facial regions only (manuscript Stage 6)
 VOTE_REGIONS = list(REGION_ORDER)
+# Final-SCC vote: the six configurations, Full Face last
+HEADS = list(REGION_ORDER) + [FULL_FACE]
 
 # ---------------------------- ADAPTER ------------------------------------
 # HueView splits — the SAME files train.py trained on
@@ -319,10 +327,10 @@ def predict_hueview(test_df, train_df, region, run_tag):
     return np.concatenate(probs), lab_raw, ok
 
 
-def full_face_vote(probs: np.ndarray) -> np.ndarray:
-    """Manuscript Full Face: majority vote of the five regions' predicted SCC;
-    a tie goes to the tied class with the highest mean softmax across the five.
-    probs: (n_images, 5 regions, 6 classes). Returns SCC labels 1..6."""
+def final_vote(probs: np.ndarray) -> np.ndarray:
+    """Manuscript final SCC: majority vote of the six configurations' predicted
+    SCC; a tie goes to the tied class with the highest mean softmax across the
+    six. probs: (n_images, 6 configurations, 6 classes). Returns SCC 1..6."""
     n, _, k = probs.shape
     votes = np.zeros((n, k), dtype=int)
     np.add.at(votes, (np.arange(n)[:, None], probs.argmax(2)), 1)
@@ -364,8 +372,8 @@ def model_provenance(run_tag: str, baseline_row: dict | None = None):
     """Print and save exactly which model/scaler files were evaluated.
     baseline_row: the Baseline's row from an earlier provenance file, when its
     predictions are reused (--reuse-baseline) instead of re-run."""
-    files = ([] if baseline_row else [BASELINE_H5]) + [hv_model_path(r, run_tag) for r in VOTE_REGIONS] \
-          + [hv_scaler_path(r, run_tag) for r in VOTE_REGIONS]
+    files = ([] if baseline_row else [BASELINE_H5]) + [hv_model_path(r, run_tag) for r in HEADS] \
+          + [hv_scaler_path(r, run_tag) for r in HEADS]
     rows = [baseline_row] if baseline_row else []
     if baseline_row:
         print(f"[model] Baseline reused: {baseline_row['file']}  {baseline_row['sha256_12']}")
@@ -377,10 +385,10 @@ def model_provenance(run_tag: str, baseline_row: dict | None = None):
         print(f"[model] {p.name:34s} {mt:%Y-%m-%d %H:%M}  {h}")
     pd.DataFrame(rows).to_csv(RESULT_DIR / "model_provenance.csv", index=False)
 
-    # best val_accuracy logged by train.py for this run_tag, for cross-checking
+    # best validation scores logged by train.py for this run_tag, for cross-checking
     log = RESULT_DIR / f"training_log{suffix_of(run_tag)}.csv"
     if log.exists():
-        print(f"[model] best val_accuracy from {log.name}:")
+        print(f"[model] training log {log.name}:")
         print(pd.read_csv(log).to_string(index=False))
 
 
@@ -416,9 +424,10 @@ def print_test_composition(rec: pd.DataFrame):
 # ------------------------------------------------------------------ main
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--primary", default="full_face", choices=REGIONS,
-                    help="config used for the headline HueView column")
-    ap.add_argument("--run-tag", default="final",
+    ap.add_argument("--primary", default="final", choices=["final"] + REGIONS,
+                    help="column used for the headline HueView result: 'final' "
+                         "(the six-way vote, the manuscript's rule) or one configuration")
+    ap.add_argument("--run-tag", default="final1",
                     help="train.py run_tag of the models to evaluate "
                          "(hueview_<region>_<run_tag>.h5); '' for no suffix")
     ap.add_argument("--reuse-baseline", metavar="RECORD_CSV",
@@ -434,7 +443,7 @@ def main():
     print(f"test images: {n}  ({TEST_CSV.name})   run_tag={a.run_tag!r}")
 
     # --- every model must exist before we start a long run
-    missing = [r for r in VOTE_REGIONS
+    missing = [r for r in HEADS
                if not hv_model_path(r, a.run_tag).exists()
                or not hv_scaler_path(r, a.run_tag).exists()]
     assert not missing, (f"missing HueView model/scaler for {missing} "
@@ -475,7 +484,7 @@ def main():
     rec["baseline_undertone"] = b_tone
 
     raw_lab, usable, region_probs = {}, {}, []
-    for r in VOTE_REGIONS:
+    for r in HEADS:
         print(f"running hueview/{r} ...")
         probs, lab_raw, ok = predict_hueview(test, train_df, r, a.run_tag)
         rec[f"hv_{r}"] = probs.argmax(1) + 1
@@ -483,13 +492,13 @@ def main():
         raw_lab[r], usable[r] = lab_raw, ok
         print(f"[lab] {r}/test: {(~ok).sum()} of {n} images had no usable "
               f"skin region (imputed from train mean)")
-    region_probs = np.stack(region_probs, axis=1)          # (n, 5, 6)
-    rec["hv_full_face"] = full_face_vote(region_probs)
+    region_probs = np.stack(region_probs, axis=1)          # (n, 6, 6)
+    rec["hv_final"] = final_vote(region_probs)
     top_votes = np.array([np.bincount(v, minlength=N_CLASSES).max()
                           for v in region_probs.argmax(2)])
     ties = sum(np.sum(np.bincount(v, minlength=N_CLASSES) == m) > 1
                for v, m in zip(region_probs.argmax(2), top_votes))
-    print(f"[full_face] majority vote of {len(VOTE_REGIONS)} regions; "
+    print(f"[final] majority vote of {len(HEADS)} configurations; "
           f"{ties} of {n} images needed the mean-softmax tie-break")
 
     # --- undertone: five facial regions, raw LAB, unusable regions abstain
@@ -519,7 +528,7 @@ def main():
     hue_cols = [c for c in rec.columns if c.endswith("_hue")]   # NaN = region abstained
     assert rec.drop(columns=hue_cols).notna().all().all(), "null predictions present"
     assert rec["SCC_ground_truth"].between(1, 6).all(), "bad ground truth"
-    for j, r in enumerate(VOTE_REGIONS):
+    for j, r in enumerate(HEADS):
         for k in range(N_CLASSES):
             rec[f"hv_{r}_p{k + 1}"] = region_probs[:, j, k].round(6)
     rec.to_csv(RESULT_DIR / "classification_results_record.csv", index=False)

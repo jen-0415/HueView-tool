@@ -103,7 +103,7 @@ def main():
     rec = pd.read_csv(RECORD_CSV)
     y = rec["SCC_ground_truth"]
     models = {"baseline": ("Baseline RGB", "baseline_pred"),
-              "hueview": ("HueView", "hv_full_face")}
+              "hueview": ("HueView", "hv_final")}   # six-way vote; hv_full_face is Table 26
 
     # ---- Appendix 2: Tables 12-19 (SOP1, SOP2) ----
     t18, t19, n = [], [], 12

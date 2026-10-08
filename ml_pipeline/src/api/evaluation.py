@@ -67,10 +67,10 @@ def build_evaluation() -> dict:
     t_sop4 = min(_mtime(p) for p in SOP4.glob("*.csv"))
 
     warnings = []
-    if "hv_forehead_p1" not in record_cols:
-        warnings.append("These results come from the old Full Face (a separately trained model), "
-                        "not the manuscript's five-region majority vote. Re-run evaluate.py, "
-                        "appendix_tables.py and significance.py.")
+    if "hv_final" not in record_cols:
+        warnings.append("These results use the Full Face model alone as HueView's result, "
+                        "not the manuscript's majority vote of all six configurations. "
+                        "Re-run evaluate.py, appendix_tables.py and significance.py.")
     if t_app < t_rec:
         warnings.append("The lighting and region tables are older than the per-image results. "
                         "Re-run appendix_tables.py.")
@@ -116,3 +116,4 @@ def build_evaluation() -> dict:
         "regions": regions,
         "significance": significance,
     }
+
