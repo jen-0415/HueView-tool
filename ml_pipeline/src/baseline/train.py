@@ -130,36 +130,40 @@ def wipe_tagged_artifacts():
 # after a resume History only covers the epochs run in this session.
 # ---------------------------------------------------------------------
 def best_from_csv(stage: str):
-    """Best epoch by val_loss, with the val_accuracy *of that same epoch*."""
+    """Best epoch by validation macro F1, with that epoch's val_loss and
+    val_accuracy."""
     p = csv_path(stage)
     if not p.exists():
         return None
     with open(p, newline="") as f:
-        rows = [r for r in csv.DictReader(f) if r.get("val_loss")]
+        rows = [r for r in csv.DictReader(f) if r.get("val_f1_score")]
     if not rows:
         return None
-    best = min(rows, key=lambda r: float(r["val_loss"]))
+    best = max(rows, key=lambda r: float(r["val_f1_score"]))
     return {
         "best_epoch": int(best["epoch"]) + 1,
+        "val_f1_score": round(float(best["val_f1_score"]), 4),
         "val_loss": round(float(best["val_loss"]), 4),
         "val_accuracy": round(float(best.get("val_accuracy") or "nan"), 4),
         "epochs_run": len(rows),
     }
 
 
-def callbacks_for(stage: str, prior_best_loss=None):
+def callbacks_for(stage: str, prior_best_f1=None):
     """
     Checkpoint + early stopping + LR reduction + resume.
 
-    Monitors val_loss, as the methodology specifies. Loss is the more
-    sensitive signal on imbalanced data: accuracy can sit flat for several
-    epochs while the model is still improving its confidence, and with
-    SCC-5 at ~6x SCC-6 a model can post decent accuracy by leaning on the
-    majority class.
+    Checkpoint and early stopping monitor validation macro F1, as the
+    manuscript specifies (Appendix 1: "checkpoints corresponding to the best
+    validation Macro F1-Score"), the same rule HueView's train.py uses.
+    Macro F1 weights all six SCC classes equally, so with SCC-5 at ~6x
+    SCC-6 a model can't look good by leaning on the majority class.
+    ReduceLROnPlateau still watches val_loss: it only paces the learning
+    rate and doesn't choose the saved model.
 
     save_best_only means an overfitting tail can't overwrite a good
     checkpoint. On a resume, initial_value_threshold carries the best
-    val_loss seen before the crash, so the first resumed epoch can't
+    val macro F1 seen before the crash, so the first resumed epoch can't
     overwrite a better checkpoint either.
 
     The checkpoint file, not EarlyStopping's restore_best_weights, is
@@ -174,12 +178,12 @@ def callbacks_for(stage: str, prior_best_loss=None):
         keras.callbacks.BackupAndRestore(backup_dir=str(backup_dir(stage))),
         keras.callbacks.ModelCheckpoint(
             filepath=str(ckpt_path(stage)),
-            monitor="val_loss", mode="min",
+            monitor="val_f1_score", mode="max",
             save_best_only=True, verbose=1,
-            initial_value_threshold=prior_best_loss,
+            initial_value_threshold=prior_best_f1,
         ),
         keras.callbacks.EarlyStopping(
-            monitor="val_loss", mode="min",
+            monitor="val_f1_score", mode="max",
             patience=PATIENCE, restore_best_weights=True, verbose=1,
         ),
         keras.callbacks.ReduceLROnPlateau(
@@ -197,7 +201,7 @@ def run_stage(stage, model, train_ds, val_ds, epochs, class_weights):
     if resuming:
         print(f"  Resuming {stage} from {backup_dir(stage)}")
         if prior:
-            print(f"  Best so far: val_loss {prior['val_loss']} (epoch {prior['best_epoch']})\n")
+            print(f"  Best so far: val macro F1 {prior['val_f1_score']} (epoch {prior['best_epoch']})\n")
     elif csv_path(stage).exists():
         # Leftover log from an earlier attempt that never got past epoch 1;
         # appending to it would mix runs.
@@ -208,7 +212,7 @@ def run_stage(stage, model, train_ds, val_ds, epochs, class_weights):
         validation_data=val_ds,
         epochs=epochs,
         class_weight=class_weights,
-        callbacks=callbacks_for(stage, prior["val_loss"] if prior else None),
+        callbacks=callbacks_for(stage, prior["val_f1_score"] if prior else None),
         verbose=1,
     )
 
@@ -283,7 +287,7 @@ def main():
     else:
         s1 = run_stage("stage1", model, train_ds, val_ds, args.stage1_epochs, class_weights)
 
-    print(f"\nStage 1 — best val_loss {s1['val_loss']:.4f} "
+    print(f"\nStage 1 — best val macro F1 {s1['val_f1_score']:.4f} "
           f"(epoch {s1['best_epoch']}), val_accuracy at that epoch {s1['val_accuracy']:.4f}")
 
     # ---------------- Stage 2: fine-tune ----------------
@@ -308,17 +312,17 @@ def main():
         else:
             s2 = run_stage("stage2", model, train_ds, val_ds, args.stage2_epochs, class_weights)
 
-        print(f"\nStage 2 — best val_loss {s2['val_loss']:.4f} "
+        print(f"\nStage 2 — best val macro F1 {s2['val_f1_score']:.4f} "
               f"(epoch {s2['best_epoch']}), val_accuracy at that epoch {s2['val_accuracy']:.4f}")
 
     # ---------------- Pick the better stage ----------------
-    if s2 is not None and s2["val_loss"] < s1["val_loss"]:
+    if s2 is not None and s2["val_f1_score"] > s1["val_f1_score"]:
         chosen = "stage2"  # model already holds the stage-2 best weights
     else:
         chosen = "stage1"
         if s2 is not None:
             print("""
-  Fine-tuning did NOT improve val_loss over the frozen-backbone result. That
+  Fine-tuning did NOT improve val macro F1 over the frozen-backbone result. That
   happens when the learning rate is too high for the pretrained weights or
   the head hadn't converged before unfreezing. The stage-1 weights are being
   saved as the final model — say so in the writeup rather than reporting the
@@ -345,7 +349,7 @@ def main():
         "batch_size": args.batch_size,
         "classes": SCC_CLASSES,
         "class_weights": {str(k): round(v, 4) for k, v in class_weights.items()},
-        "monitored": "val_loss",
+        "monitored": "val_f1_score (macro)",
         "stage1": s1,
         "stage2": s2,
         "final_model_from": chosen,

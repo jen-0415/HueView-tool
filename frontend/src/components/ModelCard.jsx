@@ -1,6 +1,6 @@
 import Card from "./Card";
 import SccStrip from "./SccStrip";
-import { sccLabel } from "../constants";
+import { sccLabel, sccMst } from "../constants";
 
 // One component renders BOTH models. Same structure = same visual weight,
 // and it makes it impossible to accidentally flatter one pipeline.
@@ -36,6 +36,11 @@ export default function ModelCard({ model, primary = false }) {
             <>
               {model.scc} &middot; {sccLabel(model.scc)}
               {undertoneLabel ? `, ${undertoneLabel}` : ""}
+              {/* The class name alone says nothing about where it sits; the
+                  MST steps it covers do. Full definition in SccScaleCard. */}
+              <span className="block font-mono text-[11px] text-ink-soft mt-1.5">
+                {sccMst(model.scc)} on the Monk Skin Tone scale
+              </span>
             </>
           ) : (
             <>

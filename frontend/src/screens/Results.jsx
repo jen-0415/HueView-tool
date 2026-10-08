@@ -6,6 +6,7 @@ import IlluminationCard from "../components/IlluminationCard";
 import UndertoneCard from "../components/UndertoneCard";
 import RegionTable from "../components/RegionTable";
 import ResultsSidebar from "../components/ResultsSidebar";
+import SccScaleCard from "../components/SccScaleCard";
 import {
   SegmentationFigures,
   RegionPredictions,
@@ -14,6 +15,9 @@ import {
 import { sccLabel } from "../constants";
 import { STEPS, ORDER } from "../stages";
 
+// One photo's result, shown the same way to every reader (the user/researcher
+// switch only controls the Evaluation Results tab -- see view.js).
+//
 // One stage at a time, picked from the sidebar. Each stage panel shows what
 // that step did ("What happened") and a plain-language reading of this
 // photo's values ("What this means"), written from the real result.
@@ -187,6 +191,8 @@ function SummaryPanel({ result, pick }) {
         <ModelCard model={baseline} />
         <ModelCard model={hueview} primary />
       </div>
+
+      <SccScaleCard predicted={hueview.scc} />
 
       <Meaning>
         <p>
@@ -459,8 +465,8 @@ function DecisionPanel({ result }) {
         <Meaning>
           <p>
             HueView&apos;s final answer is <b>{sccText(hv)}</b>, the class picked by the most of
-            its five face-region models
-            {hv.votes?.[hv.scc] != null ? ` (${hv.votes[hv.scc]} of 5)` : ""}
+            its six models — the five face regions and the full face
+            {hv.votes?.[hv.scc] != null ? ` (${hv.votes[hv.scc]} of 6)` : ""}
             {hv.tied ? ". It was a tie, so the class with the higher average score won" : ""}.
           </p>
         </Meaning>

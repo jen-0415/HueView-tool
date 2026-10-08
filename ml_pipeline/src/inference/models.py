@@ -2,10 +2,11 @@
 Phase 14.2 -- Model loading (once, at startup)
 ================================================
 Baseline: baseline_effnet_final.h5.
-HueView: per-region weights from train.py v3 (manuscript-aligned: HSV-filtered
-skin masks, skimage CIELAB), the "_final" files that evaluate.py scored for
-the thesis. The five regions vote on the final SCC (Full Face,
-inference/hueview.py); there is no separate Full Face model.
+HueView: per-configuration weights from train.py (manuscript-aligned:
+HSV-filtered skin masks, skimage CIELAB), the "_final1" files. SIX
+configurations load -- the five facial regions plus Full Face, a separately
+trained whole-face classifier. All six vote on the final SCC
+(inference/hueview.py).
 """
 
 from __future__ import annotations
@@ -20,13 +21,25 @@ logger = logging.getLogger(__name__)
 
 BASELINE_WEIGHTS_FILENAME = "baseline_effnet_final.h5"
 
-HUEVIEW_REGIONS = ["forehead", "left_cheek", "right_cheek", "nose_bridge", "jawline"]
-# train.py run_tag suffixes, in order of preference. Each region loads the
-# first suffix whose model AND scaler both exist. "_final" only: those are the
-# weights in results/model_provenance.csv, so the app gives the predictions
-# the thesis reports. ("_final1" is a different, unevaluated set of weights;
-# "_final_candidate" predates the train.py v3 input contract.)
-HUEVIEW_SUFFIXES = ("_final",)
+# The six configurations, in the order Figure 11 / Table 28 list them.
+# "full_face" is a configuration, not a sixth anatomical region: its CNN takes
+# the whole SSR face and its CIELAB input is the 15-value regional profile.
+HUEVIEW_REGIONS = ["forehead", "left_cheek", "right_cheek", "nose_bridge",
+                   "jawline", "full_face"]
+# train.py run_tag suffixes, in order of preference. Each configuration loads
+# the first suffix whose model AND scaler both exist.
+#
+# "_final1" only -- the current weights for all six configurations, regional
+# and full_face alike. Pinned to a single tag on purpose: with a fallback a
+# missing file would quietly serve a *different* set of weights, which is how
+# it stopped being obvious which models the app was actually running. If one
+# is missing the app starts in placeholder mode and logs which, rather than
+# mixing tags. ("_final_candidate" predates the current input contract.)
+#
+# Keep in step with evaluate.py --run-tag, or the app and the thesis tables
+# will report different predictions; results/model_provenance.csv records the
+# tag the last evaluation run actually scored.
+HUEVIEW_SUFFIXES = ("_final1",)
 
 _models = {"baseline": None, "hueview": None}
 _files = {"baseline": None, "hueview": {}}   # what actually got loaded

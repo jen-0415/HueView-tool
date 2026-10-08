@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { SCC } from "../constants";
+import { SCC, SCC_MEANING } from "../constants";
 
 export default function Upload({ onFile, busy, error }) {
   const input = useRef(null);
@@ -76,6 +76,11 @@ export default function Upload({ onFile, busy, error }) {
             SCC REFERENCE SCALE
           </span>
 
+          <p className="text-[13px] leading-relaxed text-ink-soft mt-3">
+            <b className="text-ink">SCC = {SCC_MEANING.name}</b>, the six skin tone groups this
+            tool classifies into. {SCC_MEANING.basis}
+          </p>
+
           <ul className="flex flex-col gap-2 mt-4">
             {SCC.map((s) => (
               <li key={s.id} className="flex items-center gap-3">
@@ -84,9 +89,14 @@ export default function Upload({ onFile, busy, error }) {
                   <span className="block font-mono text-[11px] text-accent">{s.id}</span>
                   <span className="block text-[13px]">{s.label}</span>
                 </span>
+                <span className="ml-auto font-mono text-[11px] text-ink-soft">{s.mst}</span>
               </li>
             ))}
           </ul>
+
+          <p className="text-[11px] text-ink-soft mt-2">
+            Swatches are indicative colours for each group, not the MST reference patches.
+          </p>
 
           <div className="flex gap-2 mt-5">
             <span className="rounded-full bg-warm text-warm-ink font-mono text-[11px] px-3 py-1">Warm</span>

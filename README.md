@@ -89,9 +89,9 @@ Weights are gitignored and shared via Google Drive. Place them in `ml_pipeline/m
 | File | Used by |
 |---|---|
 | `baseline_effnet_final.h5` | the API (`BASELINE_WEIGHTS_FILENAME` in `src/inference/models.py`) |
-| `hueview_<region>_<tag>.h5` + `lab_scaler_<region>_<tag>.pkl` for forehead, left_cheek, right_cheek, nose_bridge, jawline, full_face | the API (`HUEVIEW_SUFFIXES = ("_final1", "_final")`: each region loads `_final1` if both files exist, otherwise `_final`) |
+| `hueview_<region>_<tag>.h5` + `lab_scaler_<region>_<tag>.pkl` for forehead, left_cheek, right_cheek, nose_bridge, jawline, full_face | the API (`HUEVIEW_SUFFIXES = ("_final1",)`) |
 
-Currently the five regions load `_final1` and full_face falls back to `_final` (there is no `full_face_final1` yet). The UI's "ckpt" field shows which files were loaded.
+All six configurations load `_final1`, regional and full_face alike. The tag is pinned with no fallback: if a file is missing the API starts in placeholder mode and logs which configuration, rather than quietly serving a different set of weights. Run `evaluate.py --run-tag final1` so the thesis tables and the app report the same predictions — `results/model_provenance.csv` records the tag the last evaluation actually scored. The UI's "ckpt" field shows which files were loaded.
 
 `src/hueview/evaluate.py` loads `baseline_effnet.h5` and takes the HueView tag from `--run-tag` (default `final`). If a model's files are missing, the API still starts and returns that model in placeholder mode (no SCC).
 

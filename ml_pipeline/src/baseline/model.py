@@ -119,9 +119,16 @@ def build_baseline_model(
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
         loss="categorical_crossentropy",
-        metrics=["accuracy"],
+        metrics=_metrics(),
     )
     return model
+
+
+def _metrics():
+    """Accuracy plus macro F1 over the six SCC classes. Macro F1 is what the
+    checkpoint is chosen on (manuscript, Appendix 1); with threshold=None the
+    argmax class counts as the prediction."""
+    return ["accuracy", keras.metrics.F1Score(average="macro", name="f1_score")]
 
 
 def unfreeze_for_finetuning(model: keras.Model, learning_rate: float = 1e-5) -> keras.Model:
@@ -149,7 +156,7 @@ def unfreeze_for_finetuning(model: keras.Model, learning_rate: float = 1e-5) -> 
     model.compile(
         optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
         loss="categorical_crossentropy",
-        metrics=["accuracy"],
+        metrics=_metrics(),
     )
     return model
 

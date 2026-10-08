@@ -4,15 +4,17 @@ Phase 14.6 -- run_hueview()
 SSR -> MediaPipe landmarks -> regional segmentation -> HSV skin filtering ->
 CIELAB -> undertone (manuscript path, for the undertone + L*a*b* display).
 
-CLASSIFICATION (SCC) feeds each head exactly what train.py v3 trained it on,
+CLASSIFICATION (SCC) feeds each head exactly what train.py trained it on,
 built from the same Phase 7.4 patches computed below: regional heads get the
-SSR patch with non-skin pixels zeroed plus a 3-D skimage CIELAB skin mean.
-CIELAB comes from train.py's own cielab_mean(), so the values are identical.
+SSR patch with non-skin pixels zeroed plus a 3-D skimage CIELAB skin mean;
+full_face gets the entire SSR-normalized face plus the 15-value regional
+CIELAB profile. CIELAB comes from train.py's own cielab_mean(), so the values
+are identical.
 
-Final SCC = Full Face (manuscript, Fused Classification & Output): majority
-vote of the five region predictions; a tie goes to the tied class with the
-highest mean softmax across the five. There is no separate Full Face model,
-exactly as evaluate.py scores it.
+Final SCC (manuscript, Fused Classification & Output): majority vote over the
+SIX predictions -- the five regions plus Full Face, which is a separately
+trained whole-face classifier and votes as a configuration of its own. A tie
+goes to the tied class with the highest mean softmax across the six.
 
 Ordering note: landmarks from the ORIGINAL crop; masking on the SSR image.
 """
@@ -29,7 +31,7 @@ from ..hueview.ssr_normalization import apply_ssr
 from ..hueview.hsv_skin_filter import filter_all_regions
 from ..hueview.region_selector import RegionalConfigurationSelector, FULL_FACE
 from ..hueview.cielab_features import build_cielab_vector
-from ..hueview.regions import REGION_ORDER, REGION_DISPLAY
+from ..hueview.regions import REGION_ORDER, REGION_DISPLAY, STATUS_EMPTY
 from ..hueview.undertone import STW_TRAIN_CENTRE_DEG, compute_undertone_descriptor
 from ..hueview.train import cielab_mean
 from .config import HSV_CONFIG, CIELAB_FROM_ORIGINAL
@@ -107,10 +109,11 @@ def extract_landmarks(crop_rgb: np.ndarray) -> Optional[np.ndarray]:
 def _lab_input(region: str, patches, scaler) -> np.ndarray:
     """train.py's lab_vector(), on the patches this run just computed.
 
-    Single region -> 3-D skin mean; full_face -> 15-D, REGION_ORDER, gaps
-    filled with the face's own mean. A vector with no usable region falls
-    back to scaler.mean_, which equals train.py's train-split fallback: the
-    scaler was fit on rows already imputed with that mean.
+    Single region -> 3-D skin mean; full_face -> the 15-value profile in
+    REGION_ORDER (Stage 5), gaps filled with the face's own mean. A vector
+    with no usable region falls back to scaler.mean_, which equals train.py's
+    train-split fallback: the scaler was fit on rows already imputed with
+    that mean.
     """
     if region != FULL_FACE:
         p = patches[region]
@@ -127,8 +130,9 @@ def _lab_input(region: str, patches, scaler) -> np.ndarray:
 
 
 def _img_input(region: str, ssr: np.ndarray, patches) -> np.ndarray:
-    """train.py's HueViewSeq image: full_face gets the unmasked SSR face;
-    each region gets its SSR patch with every non-skin pixel zeroed."""
+    """train.py's HueViewSeq image: full_face gets the entire SSR-normalized
+    face (Stage 4); each region gets its SSR patch with every non-skin pixel
+    zeroed."""
     if region == FULL_FACE:
         return ssr
     p = patches[region]
@@ -150,8 +154,9 @@ def _predict_one(model, scaler, img_patch: np.ndarray, lab_raw: np.ndarray) -> D
 
 
 def majority_vote(region_probs: np.ndarray):
-    """Final-SCC rule over the five regional heads' softmax vectors (shape
-    5 x 6). Returns (class index, vote counts, tied, mean softmax)."""
+    """Final-SCC rule over the six heads' softmax vectors (shape 6 x 6: the
+    five regions plus full_face, which votes as a configuration of its own).
+    Returns (class index, vote counts, tied, mean softmax)."""
     votes = np.bincount(region_probs.argmax(axis=1), minlength=len(SCC_CLASS_ORDER))
     mean = region_probs.mean(axis=0)
     top = np.flatnonzero(votes == votes.max())
@@ -168,10 +173,14 @@ def _classify_hueview(ssr, patches, hv) -> Dict:
                                             _img_input(name, ssr, patches),
                                             _lab_input(name, patches, scalers[name]))
 
-    heads = [out["regions"][n] for n in REGION_ORDER]
+    out["full_face"] = _predict_one(models[FULL_FACE], scalers[FULL_FACE],
+                                    _img_input(FULL_FACE, ssr, patches),
+                                    _lab_input(FULL_FACE, patches, scalers[FULL_FACE]))
+
+    heads = [out["regions"][n] for n in REGION_ORDER] + [out["full_face"]]
     probs = np.array([h["probabilities"] for h in heads], dtype=np.float64)
     idx, votes, tied, mean = majority_vote(probs)
-    # confidence/margin: the chosen class's mean softmax over the five heads and
+    # confidence/margin: the chosen class's mean softmax over the six heads and
     # its lead over the best other class (negative when the vote overrules the mean).
     others = np.delete(mean, idx)
     out["headline"] = {
@@ -182,8 +191,6 @@ def _classify_hueview(ssr, patches, hv) -> Dict:
         "votes": {SCC_CLASS_ORDER[i]: int(v) for i, v in enumerate(votes) if v},
         "tied": bool(tied),
     }
-    out["full_face"] = {k: out["headline"][k]
-                        for k in ("scc", "probabilities", "confidence", "margin")}
     return out
 
 
@@ -218,6 +225,20 @@ def run_hueview(
         config=HSV_CONFIG,
         reference_image=crop_rgb,
     )
+
+    # Sampling rule (Chapter 3): an image is included only if all five regions
+    # keep a non-empty skin mask. Otherwise a region would vote on colour the
+    # model never saw, and Full Face's 15-value profile would be part
+    # imputation, so reject it the way the dataset did.
+    empty = [n for n in REGION_ORDER
+             if patches.get(n) is None or patches[n].status == STATUS_EMPTY]
+    if empty:
+        names = ", ".join(REGION_DISPLAY[n] for n in empty)
+        raise NoFaceDetected(
+            f"No skin could be found in: {names}. HueView needs all five face "
+            f"regions, so it can't analyze this image. Try a front-facing photo "
+            f"with the forehead, cheeks, nose and jawline uncovered."
+        )
 
     if capture is not None:
         capture.update(ssr=ssr, masks=masks, patches=patches)

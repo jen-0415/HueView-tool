@@ -156,13 +156,12 @@ def build_result(image_bytes: bytes, filename: str = "", state: Optional[Dict] =
     hueview = payload["models"]["hueview"]
     hueview["decision"] = {
         "method": "majority_vote",
-        "heads": list(REGION_ORDER),
+        "heads": list(REGION_ORDER) + ["full_face"],
         "description": (
-            "Each of the five HueView region models (forehead, both cheeks, nose "
-            "bridge and jawline) votes for the skin color class it scores highest. "
-            "The class with the most votes is the Full Face result. If two classes "
-            "get the same number of votes, the one with the higher average score "
-            "across the five models wins."
+            "Each of the six HueView models (five face regions and the full face) "
+            "votes for the skin color class it scores highest. The class with the "
+            "most votes wins. If two classes get the same number of votes, the one "
+            "with the higher average score across the six models wins."
         ),
     }
     try:
@@ -224,7 +223,7 @@ def _segmentation_visuals(crop: np.ndarray, capture: Dict) -> Dict:
       * geometric: Phase 7.3 landmark convex-hull regions on the crop
       * skin:      pixels kept by Phase 7.4's HSV filter (removed ones greyed)
       * inputs:    each model's exact image input (skin-masked SSR patch,
-                   zoomed to its region; Full Face has no model of its own)
+                   zoomed to its region; unmasked SSR face for full_face)
     """
     ssr, masks, patches = capture["ssr"], capture["masks"], capture["patches"]
     skin = {n: patches[n].skin_mask for n in REGION_ORDER}
@@ -239,6 +238,8 @@ def _segmentation_visuals(crop: np.ndarray, capture: Dict) -> Dict:
     removed[any_geom & ~any_skin] = (removed[any_geom & ~any_skin] * 0.25).astype(np.uint8)
 
     inputs = {n: _zoom_to(_img_input(n, ssr, patches), masks[n]) for n in REGION_ORDER}
+    inputs["full_face"] = cv2.resize(_img_input("full_face", ssr, patches), (160, 160),
+                                     interpolation=cv2.INTER_AREA)
     return {
         "geometric": _to_data_url(_overlay(crop, masks, 0.45, outlines=masks)),
         "skin": _to_data_url(_overlay(removed, skin, 0.55, outlines=masks)),

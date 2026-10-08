@@ -49,6 +49,13 @@ BATCH_SIZE = 32
 NUM_CLASSES = 6
 AUTOTUNE = tf.data.AUTOTUNE
 
+# Rotation of up to +/-15 deg with black fill, the same range HueView's
+# train.py augment() uses, so both models get the manuscript's "horizontal
+# flipping, rotation, and color jittering". The factor is a fraction of a
+# full turn (15/360).
+_ROTATE = tf.keras.layers.RandomRotation(15.0 / 360.0, fill_mode="constant",
+                                         fill_value=0.0)
+
 # Explicit and fixed. Never infer this from the data.
 SCC_CLASSES = ["SCC-1", "SCC-2", "SCC-3", "SCC-4", "SCC-5", "SCC-6"]
 SCC_TO_INDEX = {c: i for i, c in enumerate(SCC_CLASSES)}
@@ -136,6 +143,7 @@ def _decode(path, rgb, label, augment: bool):
 
     if augment:
         img = tf.image.random_flip_left_right(img)
+        img = _ROTATE(img, training=True)
         img = tf.image.random_brightness(img, max_delta=20.0)
         img = tf.image.random_contrast(img, 0.9, 1.1)
         img = tf.clip_by_value(img, 0.0, 255.0)

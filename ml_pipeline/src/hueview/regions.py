@@ -75,7 +75,10 @@ REGION_DISPLAY: Dict[str, str] = {
     "right_cheek": "Right Cheek",
     "nose_bridge": "Nose Bridge",
     "jawline": "Jawline",
-    "full_face": "Full Face (All Five Combined)",
+    # Table 26/28 and the List of Tables call this "Whole Face Classifier":
+    # a separately trained EfficientNetB0 on the entire SSR-normalized face,
+    # not a composite of the five regions.
+    "full_face": "Full Face (Whole Face Classifier)",
 }
 
 #: Integer id per region, 1-5. Zero is reserved for "outside every region".

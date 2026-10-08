@@ -1,12 +1,12 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Card from "../components/Card";
-import { getEvaluation } from "../api";
+import { useEvaluation } from "../useEvaluation";
 
 // Evaluation results from the saved result files (GET /api/evaluation): the
-// Baseline and HueView under each lighting level, HueView per facial region,
-// and the significance tests. Numbers are never computed here -- this screen
-// only lays out what evaluate.py, appendix_tables.py and significance.py wrote,
-// so it always matches the tables in Chapter 4 and the appendices.
+// Baseline and HueView under each lighting level, and HueView per facial
+// region. Numbers are never computed here -- this screen only lays out what
+// evaluate.py and appendix_tables.py wrote, so it always matches the tables in
+// Chapter 4 and the appendices.
 // One page at a time, picked from the sidebar, like the analysis Results.
 
 const METRICS = [
@@ -17,27 +17,18 @@ const METRICS = [
 ];
 const SMALL_BIN = 200;
 
+const pct = (v, d = 1) => (v == null ? "—" : `${(v * 100).toFixed(d)}%`);
+
 // Pages, in the order the study reports them.
 const PAGES = [
   { id: "baseline", n: "01", group: "Lighting conditions", label: "Baseline (global RGB)" },
   { id: "hueview", n: "02", group: "Lighting conditions", label: "HueView" },
   { id: "regions", n: "03", group: "Facial regions", label: "HueView by region" },
-  { id: "tests", n: "04", group: "Comparison", label: "Significance tests" },
 ];
 
-const pct = (v, d = 1) => (v == null ? "—" : `${(v * 100).toFixed(d)}%`);
-const signed = (v) => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v * 100).toFixed(2)} pts`);
-const pval = (p) => (p == null ? "—" : p < 0.0001 ? p.toExponential(2) : p.toFixed(4));
-const stamp = (t) => t.replace("T", " ");
-
 export default function Evaluation() {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
+  const { data, error } = useEvaluation();
   const [page, setPage] = useState(PAGES[0].id);
-
-  useEffect(() => {
-    getEvaluation().then(setData).catch((e) => setError(e.message));
-  }, []);
 
   if (error) {
     return (
@@ -67,15 +58,6 @@ export default function Evaluation() {
       <EvaluationSidebar page={page} onPick={pick} data={data} />
 
       <section className="flex-1 min-w-0 w-full flex flex-col gap-5">
-        {data.warnings.length > 0 && (
-          <div className="border-2 border-accent bg-white rounded-2xl px-5 py-4" role="alert">
-            <div className="font-mono text-[11px] tracking-widest uppercase text-accent">Results not final</div>
-            <ul className="mt-2 text-sm list-disc pl-5 space-y-1">
-              {data.warnings.map((w) => <li key={w}>{w}</li>)}
-            </ul>
-          </div>
-        )}
-
         {page === "baseline" && (
           <LightingPage
             page={PAGES[0]}
@@ -83,21 +65,18 @@ export default function Evaluation() {
             description="Skin tone classification by the Baseline (EfficientNetB0 with global RGB averaging) on test images grouped into low, medium and high lighting."
             model="Baseline"
             block={data.baseline_lighting}
-            tables="12–14"
           />
         )}
         {page === "hueview" && (
           <LightingPage
             page={PAGES[1]}
             title="HueView under different lighting"
-            description="Skin tone classification by HueView (EfficientNetB0 with Single-Scale Retinex, regional facial analysis and CIELAB; Full Face result) on the same test images and lighting groups."
+            description="Skin tone classification by HueView (EfficientNetB0 with Single-Scale Retinex, regional facial analysis and CIELAB; final result, the majority vote of its six configurations) on the same test images and lighting groups."
             model="HueView"
             block={data.hueview_lighting}
-            tables="15–17"
           />
         )}
         {page === "regions" && <RegionPage page={PAGES[2]} block={data.regions} />}
-        {page === "tests" && <SignificancePage page={PAGES[3]} block={data.significance} />}
 
         <div className="flex justify-between gap-3 flex-wrap border-t border-line pt-4">
           <div>
@@ -140,11 +119,6 @@ function EvaluationSidebar({ page, onPick, data }) {
       <Card className="p-4">
         <div className="font-mono text-[11px] tracking-widest uppercase text-ink-soft">Test set</div>
         <div className="font-display text-2xl mt-0.5">{data.n_test.toLocaleString()} images</div>
-        <div className="text-[11px] text-ink-soft mt-1 leading-relaxed">
-          Predictions saved {stamp(data.generated.record)}
-          <br />
-          Significance tests run {stamp(data.generated.significance)}
-        </div>
       </Card>
 
       <div className="lg:hidden">
@@ -368,7 +342,7 @@ function Confusion({ title, matrix }) {
 
 /* -------------------------------------------------------- lighting pages */
 
-function LightingPage({ page, title, description, model, block, tables }) {
+function LightingPage({ page, title, description, model, block }) {
   const rows = block.metrics;
   const by = (k) => [...rows].sort((a, b) => b[k] - a[k]);
   const bestAcc = by("Accuracy")[0];
@@ -396,13 +370,13 @@ function LightingPage({ page, title, description, model, block, tables }) {
     <Page page={page} title={title} description={description} findings={answer}>
       <div className="flex flex-col gap-2">
         <SubHead note="Precision, recall and F1 are macro-averaged over the six SCC classes.">
-          Performance by illumination bin (Table 19)
+          Performance by illumination bin
         </SubHead>
         <MetricTable rows={rows} groupKey="Illumination" groupLabel="Illumination" />
       </div>
       <div className="flex flex-col gap-2">
         <SubHead note="Rows are the true SCC, columns the predicted SCC; darker means a larger share of that true class.">
-          Confusion matrices (Tables {tables})
+          Confusion matrices
         </SubHead>
         <div className="flex flex-wrap gap-6">
           {Object.entries(block.confusion).map(([bin, m]) => (
@@ -410,7 +384,7 @@ function LightingPage({ page, title, description, model, block, tables }) {
           ))}
         </div>
       </div>
-      <More title="Per-class results (Table 18)">
+      <More title="Per-class results">
         <PerClassTable rows={block.perclass} groupKey="Illumination" />
       </More>
     </Page>
@@ -435,8 +409,9 @@ function RegionPage({ page, block }) {
       </p>
       {full && (
         <p>
-          The <b>Full Face</b> configuration, the majority vote of the five regions, reaches{" "}
-          {pct(full.Accuracy)} accuracy and {pct(full["Macro F1-Score"])} macro F1.
+          The <b>Full Face</b> configuration, a separately trained classifier that sees the whole
+          normalized face, reaches {pct(full.Accuracy)} accuracy and{" "}
+          {pct(full["Macro F1-Score"])} macro F1.
         </p>
       )}
     </>
@@ -446,214 +421,25 @@ function RegionPage({ page, block }) {
     <Page
       page={page}
       title="HueView by facial region"
-      description="HueView classifying from each facial region on its own (forehead, left cheek, right cheek, jawline, nose bridge) and from the Full Face, the majority vote of the five."
+      description="HueView classifying from each facial region on its own (forehead, left cheek, right cheek, jawline, nose bridge) and from the Full Face, a separately trained classifier that sees the whole normalized face. All six vote on the final result."
       findings={answer}
     >
       <div className="flex flex-col gap-2">
         <SubHead note="Each region was evaluated on the same test images.">
-          Performance by facial region (Table 28)
+          Performance by facial region
         </SubHead>
         <MetricTable rows={rows} groupKey="Region" groupLabel="Region" />
       </div>
       <div className="flex flex-col gap-2">
-        <SubHead>Confusion matrices (Tables 21–26)</SubHead>
+        <SubHead>Confusion matrices</SubHead>
         <div className="flex flex-wrap gap-6">
           {Object.entries(block.confusion).map(([region, m]) => (
             <Confusion key={region} title={region} matrix={m} />
           ))}
         </div>
       </div>
-      <More title="Per-class results (Table 27)">
+      <More title="Per-class results">
         <PerClassTable rows={block.perclass} groupKey="Region" />
-      </More>
-    </Page>
-  );
-}
-
-/* ------------------------------------------------------ significance page */
-
-const METRIC_LABEL = Object.fromEntries(METRICS.map((m) => [m.short, m.label]));
-
-function Decision({ reject }) {
-  return reject ? (
-    <span className="inline-block rounded-full bg-accent text-white text-[11px] px-2.5 py-0.5">Reject H₀</span>
-  ) : (
-    <span className="inline-block rounded-full bg-blush text-ink-soft text-[11px] px-2.5 py-0.5">Fail to reject</span>
-  );
-}
-
-// Statistic column: McNemar's b/c + mid-p for accuracy, BCa CI for macro metrics.
-function evidence(r) {
-  if (r.metric === "accuracy") return `${r.statistic}; mid-p = ${pval(r.p_value)}`;
-  const lvl = r.ci_level ? `${(r.ci_level * 100).toFixed(2)}%` : "";
-  return `${lvl} BCa CI [${signed(r.ci_low)}, ${signed(r.ci_high)}]`;
-}
-
-function TestTable({ rows, aLabel, bLabel, showStratum = true }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="bg-blush">
-            {showStratum && <th className={th}>Condition</th>}
-            <th className={th}>Metric</th>
-            <th className={thR}>{aLabel}</th>
-            <th className={thR}>{bLabel}</th>
-            <th className={thR}>Difference</th>
-            <th className={th}>Test result</th>
-            <th className={th}>Alpha</th>
-            <th className={th}>Decision</th>
-            <th className={th}>Favours</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={`${r.stratum}-${r.a}-${r.b}-${r.metric}`} className="border-t border-line-soft align-top">
-              {showStratum && <td className="px-3 py-2">{r.stratum}</td>}
-              <td className="px-3 py-2">{METRIC_LABEL[r.metric] ?? r.metric}</td>
-              <td className="px-3 py-2 text-right font-mono">{pct(r.score_a)}</td>
-              <td className="px-3 py-2 text-right font-mono">{pct(r.score_b)}</td>
-              <td className="px-3 py-2 text-right font-mono">{signed(r.score_b - r.score_a)}</td>
-              <td className="px-3 py-2 font-mono text-[11px] text-ink-soft">{evidence(r)}</td>
-              <td className="px-3 py-2 font-mono text-[11px]">{r.alpha?.toFixed(4)}</td>
-              <td className="px-3 py-2"><Decision reject={r.reject_h0} /></td>
-              <td className="px-3 py-2">{r.reject_h0 ? r.favours : "—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function HypothesisCard({ code, statement, decisions }) {
-  return (
-    <div className="border border-line-soft rounded-xl p-4">
-      <div className="font-mono text-[12px] font-semibold text-accent">{code}</div>
-      <p className="text-[13px] mt-1">{statement}</p>
-      <ul className="mt-3 space-y-1.5">
-        {decisions.map((d) => (
-          <li key={d.hypothesis} className="flex items-center justify-between gap-2 text-[13px]">
-            <span>{d.hypothesis.split("—")[1]?.trim()}</span>
-            <span className="flex items-center gap-2">
-              {d.bins_rejected && d.bins_rejected !== "none" && d.bins_rejected !== "full test set" && (
-                <span className="text-[11px] text-ink-soft">{d.bins_rejected}</span>
-              )}
-              <Decision reject={d.conclusion.startsWith("Reject")} />
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function SignificancePage({ page, block }) {
-  const dec = (h) => block.decisions.filter((d) => d.hypothesis.startsWith(h));
-  const h03 = block.h03;
-  const sigH03 = h03.filter((r) => r.reject_h0);
-  const omni = block.h02_omnibus.find((r) => r.metric.startsWith("Accuracy"));
-
-  const answer = (
-    <>
-      <p>
-        <b>Overall (H₀3):</b>{" "}
-        {sigH03.length === 0
-          ? "no metric differs significantly between the Baseline and HueView."
-          : `${sigH03.map((r) => `${METRIC_LABEL[r.metric]} (favours ${r.favours})`).join(", ")} ${sigH03.length === 1 ? "differs" : "differ"} significantly; ${h03.filter((r) => !r.reject_h0).map((r) => METRIC_LABEL[r.metric]).join(", ") || "no other metric"} ${h03.length - sigH03.length === 1 ? "does" : "do"} not.`}
-      </p>
-      <p>
-        <b>By illumination (H₀1):</b>{" "}
-        {block.h01.filter((r) => r.reject_h0).length === 0
-          ? "no significant difference in any bin."
-          : block.h01
-              .filter((r) => r.reject_h0)
-              .map((r) => `${METRIC_LABEL[r.metric]} under ${r.stratum} (favours ${r.favours})`)
-              .join("; ") + "."}
-      </p>
-      {omni && (
-        <p>
-          <b>Across regions (H₀2):</b> Cochran&apos;s {omni.statistic}, p = {pval(omni.p_value)} —{" "}
-          {omni.reject_h0 ? "accuracy differs among the six region configurations." : "no significant difference in accuracy among regions."}{" "}
-          Pairwise results are below.
-        </p>
-      )}
-    </>
-  );
-
-  return (
-    <Page
-      page={page}
-      title="Significance tests"
-      description="Whether the differences between the Baseline and HueView (overall and per lighting level), and among HueView's facial regions, are statistically significant."
-      findings={answer}
-    >
-      <div className="grid md:grid-cols-3 gap-4">
-        <HypothesisCard
-          code="H₀1"
-          statement="No significant difference between the Baseline and HueView within each illumination condition."
-          decisions={dec("H01")}
-        />
-        <HypothesisCard
-          code="H₀2"
-          statement="No significant difference in HueView's performance among the six facial region configurations."
-          decisions={dec("H02")}
-        />
-        <HypothesisCard
-          code="H₀3"
-          statement="No significant difference in overall performance between the Baseline and HueView."
-          decisions={dec("H03")}
-        />
-      </div>
-      <p className="text-[12px] text-ink-soft -mt-2">
-        Accuracy: McNemar&apos;s test with mid-p correction. Precision, recall, F1: paired bootstrap (B = 10,000,
-        stratified by SCC) with BCa intervals; significant when the interval excludes zero. Bonferroni α: H₀1
-        0.05/12, H₀2 0.05/15, H₀3 0.05/4. For H₀1 and H₀2 a metric is rejected when any bin or pair is
-        significant.
-      </p>
-
-      <div className="flex flex-col gap-2">
-        <SubHead note="Difference = HueView − Baseline, in percentage points.">H₀3 — full test set (Table 31.D)</SubHead>
-        <TestTable rows={h03} aLabel="Baseline" bLabel="HueView" showStratum={false} />
-      </div>
-      <div className="flex flex-col gap-2">
-        <SubHead note="Difference = HueView − Baseline, in percentage points.">H₀1 — by illumination (Table 31.A)</SubHead>
-        <TestTable rows={block.h01} aLabel="Baseline" bLabel="HueView" />
-      </div>
-      <div className="flex flex-col gap-2">
-        <SubHead>H₀2 — omnibus (Table 31.B)</SubHead>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-blush">
-                <th className={th}>Metric</th>
-                <th className={th}>Test</th>
-                <th className={th}>Result</th>
-                <th className={th}>Decision</th>
-              </tr>
-            </thead>
-            <tbody>
-              {block.h02_omnibus.map((r) => (
-                <tr key={r.metric} className="border-t border-line-soft">
-                  <td className="px-3 py-2">{r.metric}</td>
-                  <td className="px-3 py-2">{r.test}</td>
-                  <td className="px-3 py-2 font-mono text-[12px]">
-                    {r.statistic}
-                    {r.p_value != null && `; p = ${pval(r.p_value)}`}
-                  </td>
-                  <td className="px-3 py-2"><Decision reject={r.reject_h0} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <More title="H₀2 — all 15 region pairs × 4 metrics (Table 31.C; difference = Region B − Region A)">
-        <TestTable
-          rows={block.h02_pairwise.map((r) => ({ ...r, stratum: `${r.a} vs. ${r.b}` }))}
-          aLabel="Region A"
-          bLabel="Region B"
-        />
       </More>
     </Page>
   );
