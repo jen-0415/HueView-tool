@@ -42,6 +42,12 @@ Checks before anything runs:
   * test_hueview_usable.csv is a subset of baseline_rgb_test.csv, so both
     models are scored on identical images (required for paired McNemar).
 
+Full Face (manuscript, Fused Classification & Output): majority vote over the
+five region-specific predictions; a tie goes to the class with the highest
+mean softmax probability across the five regions. It is NOT a separately
+trained model, so hueview_full_face_*.h5 is not loaded. Each region's softmax
+is saved in the record (hv_<region>_p1..p6) so the vote can be re-derived.
+
 Undertone: hue angle per facial region from the RAW (un-imputed) CIELAB mean;
 majority vote across the FIVE facial regions only (full_face excluded), and a
 region with no usable skin pixels does not vote.
@@ -232,6 +238,8 @@ def hue_angle(lab: np.ndarray) -> float:
 
 
 def region_undertone(h: float) -> str:
+    if h > 180.0:            # a*>0, b*<0 is pink, not "> 65 deg" (undertone.py decision c)
+        h -= 360.0
     if h > 65.0:
         return "Warm"
     if h >= 55.0:
@@ -294,7 +302,7 @@ def predict_baseline(df: pd.DataFrame):
 
 
 def predict_hueview(test_df, train_df, region, run_tag):
-    """Returns (SCC preds, raw test LAB, usable flags)."""
+    """Returns (softmax, n x 6; raw test LAB; usable flags)."""
     model = keras.models.load_model(hv_model_path(region, run_tag), compile=False)
     scaler = joblib.load(hv_scaler_path(region, run_tag))   # fit on TRAIN in train.py
 
@@ -304,12 +312,23 @@ def predict_hueview(test_df, train_df, region, run_tag):
     # Same input builder as training/validation: no shuffle, no augmentation.
     seq = HueViewSeq(test_df, region, lab, scaler, BATCH,
                      shuffle=False, do_augment=False)
-    preds = []
+    probs = []
     for i in range(len(seq)):
         x, _ = seq[i]
-        p = model.predict(x, verbose=0)
-        preds.extend(p.argmax(1) + 1)
-    return np.array(preds), lab_raw, ok
+        probs.append(model.predict(x, verbose=0))
+    return np.concatenate(probs), lab_raw, ok
+
+
+def full_face_vote(probs: np.ndarray) -> np.ndarray:
+    """Manuscript Full Face: majority vote of the five regions' predicted SCC;
+    a tie goes to the tied class with the highest mean softmax across the five.
+    probs: (n_images, 5 regions, 6 classes). Returns SCC labels 1..6."""
+    n, _, k = probs.shape
+    votes = np.zeros((n, k), dtype=int)
+    np.add.at(votes, (np.arange(n)[:, None], probs.argmax(2)), 1)
+    mean = probs.mean(1)
+    mean[votes < votes.max(1, keepdims=True)] = -np.inf     # only tied leaders compete
+    return mean.argmax(1) + 1
 
 
 # --------------------------------------------------------------- metrics
@@ -342,11 +361,15 @@ def save_confusion(y_true, y_pred, path):
 
 
 # ---------------------------------------------------------------- checks
-def model_provenance(run_tag: str):
-    """Print and save exactly which model/scaler files were evaluated."""
-    files = [BASELINE_H5] + [hv_model_path(r, run_tag) for r in REGIONS] \
-          + [hv_scaler_path(r, run_tag) for r in REGIONS]
-    rows = []
+def model_provenance(run_tag: str, baseline_row: dict | None = None):
+    """Print and save exactly which model/scaler files were evaluated.
+    baseline_row: the Baseline's row from an earlier provenance file, when its
+    predictions are reused (--reuse-baseline) instead of re-run."""
+    files = ([] if baseline_row else [BASELINE_H5]) + [hv_model_path(r, run_tag) for r in VOTE_REGIONS] \
+          + [hv_scaler_path(r, run_tag) for r in VOTE_REGIONS]
+    rows = [baseline_row] if baseline_row else []
+    if baseline_row:
+        print(f"[model] Baseline reused: {baseline_row['file']}  {baseline_row['sha256_12']}")
     for p in files:
         h = hashlib.sha256(p.read_bytes()).hexdigest()[:12]
         mt = datetime.datetime.fromtimestamp(p.stat().st_mtime)
@@ -399,6 +422,10 @@ def main():
     ap.add_argument("--run-tag", default="final",
                     help="train.py run_tag of the models to evaluate "
                          "(hueview_<region>_<run_tag>.h5); '' for no suffix")
+    ap.add_argument("--reuse-baseline", metavar="RECORD_CSV",
+                    help="take baseline_pred / baseline_undertone from an earlier "
+                         "classification_results_record.csv instead of running the "
+                         "Baseline model (its model_provenance.csv must sit beside it)")
     a = ap.parse_args()
 
     RESULT_DIR.mkdir(parents=True, exist_ok=True)
@@ -408,17 +435,27 @@ def main():
     print(f"test images: {n}  ({TEST_CSV.name})   run_tag={a.run_tag!r}")
 
     # --- every model must exist before we start a long run
-    missing = [r for r in REGIONS
+    missing = [r for r in VOTE_REGIONS
                if not hv_model_path(r, a.run_tag).exists()
                or not hv_scaler_path(r, a.run_tag).exists()]
     assert not missing, (f"missing HueView model/scaler for {missing} "
                          f"(expected e.g. {hv_model_path(missing[0], a.run_tag).name} "
                          f"in {MODEL_DIR})" if missing else "")
-    assert BASELINE_H5.exists(), f"missing Baseline model: {BASELINE_H5}"
-    model_provenance(a.run_tag)
+    old_base, base_prov = None, None
+    if a.reuse_baseline:
+        src = pathlib.Path(a.reuse_baseline)
+        old_base = pd.read_csv(src).set_index(FNAME_COL)
+        prov = pd.read_csv(src.parent / "model_provenance.csv")
+        base_prov = prov[prov["file"].str.contains("baseline")].iloc[0].to_dict()
+        assert set(test[FNAME_COL]) == set(old_base.index), (
+            f"{src.name} was scored on a different test set; cannot reuse its Baseline")
+    else:
+        assert BASELINE_H5.exists(), f"missing Baseline model: {BASELINE_H5}"
+    model_provenance(a.run_tag, base_prov)
 
     check_splits(test)
-    resolve_baseline_faces(test)
+    if not a.reuse_baseline:
+        resolve_baseline_faces(test)
     clear_stale_test_cache()
 
     rec = pd.DataFrame({
@@ -429,22 +466,36 @@ def main():
     })
     print_test_composition(rec)
 
-    print("running baseline ...")
-    b_pred, b_tone = predict_baseline(test)
+    if old_base is not None:
+        b_pred = old_base.loc[test[FNAME_COL], "baseline_pred"].to_numpy()
+        b_tone = old_base.loc[test[FNAME_COL], "baseline_undertone"].to_numpy()
+    else:
+        print("running baseline ...")
+        b_pred, b_tone = predict_baseline(test)
     rec["baseline_pred"] = b_pred
     rec["baseline_undertone"] = b_tone
 
-    raw_lab, usable = {}, {}
-    for r in REGIONS:
+    raw_lab, usable, region_probs = {}, {}, []
+    for r in VOTE_REGIONS:
         print(f"running hueview/{r} ...")
-        p, lab_raw, ok = predict_hueview(test, train_df, r, a.run_tag)
-        rec[f"hv_{r}"] = p
+        probs, lab_raw, ok = predict_hueview(test, train_df, r, a.run_tag)
+        rec[f"hv_{r}"] = probs.argmax(1) + 1
+        region_probs.append(probs)
         raw_lab[r], usable[r] = lab_raw, ok
         print(f"[lab] {r}/test: {(~ok).sum()} of {n} images had no usable "
               f"skin region (imputed from train mean)")
+    region_probs = np.stack(region_probs, axis=1)          # (n, 5, 6)
+    rec["hv_full_face"] = full_face_vote(region_probs)
+    top_votes = np.array([np.bincount(v, minlength=N_CLASSES).max()
+                          for v in region_probs.argmax(2)])
+    ties = sum(np.sum(np.bincount(v, minlength=N_CLASSES) == m) > 1
+               for v, m in zip(region_probs.argmax(2), top_votes))
+    print(f"[full_face] majority vote of {len(VOTE_REGIONS)} regions; "
+          f"{ties} of {n} images needed the mean-softmax tie-break")
 
     # --- undertone: five facial regions, raw LAB, unusable regions abstain
     maj = []
+    region_cols = {f"hv_{r}_{k}": [] for r in VOTE_REGIONS for k in ("hue", "undertone")}
     for i in range(n):
         votes = {}
         for r in VOTE_REGIONS:
@@ -452,16 +503,26 @@ def main():
             if usable[r][i] and np.isfinite(v).all():
                 h = hue_angle(v)
                 votes[r] = (region_undertone(h), h)
+            h, u = votes.get(r, (None, np.nan))[::-1]
+            region_cols[f"hv_{r}_hue"].append(h)
+            region_cols[f"hv_{r}_undertone"].append(u or "")
         maj.append(majority_undertone(votes))
     rec["hv_majority_undertone"] = maj
+    # Per-region descriptors (Appendix 5, Table 35); "" = region abstained
+    for c, vals in region_cols.items():
+        rec[c] = vals
     und = (rec["hv_majority_undertone"] == "Undetermined").sum()
     if und:
         print(f"[undertone] {und} images had no usable facial region -> 'Undetermined'")
 
     # --- integrity checks before anything downstream trusts this file
     assert len(rec) == n, "row count drifted"
-    assert rec.notna().all().all(), "null predictions present"
+    hue_cols = [c for c in rec.columns if c.endswith("_hue")]   # NaN = region abstained
+    assert rec.drop(columns=hue_cols).notna().all().all(), "null predictions present"
     assert rec["SCC_ground_truth"].between(1, 6).all(), "bad ground truth"
+    for j, r in enumerate(VOTE_REGIONS):
+        for k in range(N_CLASSES):
+            rec[f"hv_{r}_p{k + 1}"] = region_probs[:, j, k].round(6)
     rec.to_csv(RESULT_DIR / "classification_results_record.csv", index=False)
     print("wrote classification_results_record.csv")
 

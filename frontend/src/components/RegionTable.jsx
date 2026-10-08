@@ -42,8 +42,8 @@ export default function RegionTable({ regions }) {
 
       <p className="px-6 py-3 text-xs text-ink-soft">
         &ldquo;Excluded&rdquo; areas had too little skin to measure, so values from the other
-        areas fill in for them. The Full Face row sums up the five areas; its own model casts
-        the sixth vote on the final result.
+        areas fill in for them. The Full Face row sums up the five areas; its skin color class is
+        the majority vote of the five area models.
       </p>
     </Card>
   );

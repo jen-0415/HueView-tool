@@ -6,13 +6,13 @@ CIELAB -> undertone (manuscript path, for the undertone + L*a*b* display).
 
 CLASSIFICATION (SCC) feeds each head exactly what train.py v3 trained it on,
 built from the same Phase 7.4 patches computed below: regional heads get the
-SSR patch with non-skin pixels zeroed plus a 3-D skimage CIELAB skin mean;
-full_face gets the unmasked SSR face plus the 15-D regional CIELAB vector.
+SSR patch with non-skin pixels zeroed plus a 3-D skimage CIELAB skin mean.
 CIELAB comes from train.py's own cielab_mean(), so the values are identical.
 
-Final SCC (system architecture): majority vote of the six predictions -- the
-five regions plus full_face; a tie goes to the tied class with the highest
-mean softmax across the six.
+Final SCC = Full Face (manuscript, Fused Classification & Output): majority
+vote of the five region predictions; a tie goes to the tied class with the
+highest mean softmax across the five. There is no separate Full Face model,
+exactly as evaluate.py scores it.
 
 Ordering note: landmarks from the ORIGINAL crop; masking on the SSR image.
 """
@@ -150,8 +150,8 @@ def _predict_one(model, scaler, img_patch: np.ndarray, lab_raw: np.ndarray) -> D
 
 
 def majority_vote(region_probs: np.ndarray):
-    """Final-SCC rule over the six heads' softmax vectors (shape 6 x 6: five
-    regions + full_face). Returns (class index, vote counts, tied, mean softmax)."""
+    """Final-SCC rule over the five regional heads' softmax vectors (shape
+    5 x 6). Returns (class index, vote counts, tied, mean softmax)."""
     votes = np.bincount(region_probs.argmax(axis=1), minlength=len(SCC_CLASS_ORDER))
     mean = region_probs.mean(axis=0)
     top = np.flatnonzero(votes == votes.max())
@@ -167,14 +167,11 @@ def _classify_hueview(ssr, patches, hv) -> Dict:
         out["regions"][name] = _predict_one(models[name], scalers[name],
                                             _img_input(name, ssr, patches),
                                             _lab_input(name, patches, scalers[name]))
-    out["full_face"] = _predict_one(models[FULL_FACE], scalers[FULL_FACE],
-                                    _img_input(FULL_FACE, ssr, patches),
-                                    _lab_input(FULL_FACE, patches, scalers[FULL_FACE]))
 
-    heads = [out["regions"][n] for n in REGION_ORDER] + [out["full_face"]]
+    heads = [out["regions"][n] for n in REGION_ORDER]
     probs = np.array([h["probabilities"] for h in heads], dtype=np.float64)
     idx, votes, tied, mean = majority_vote(probs)
-    # confidence/margin: the chosen class's mean softmax over the six heads and
+    # confidence/margin: the chosen class's mean softmax over the five heads and
     # its lead over the best other class (negative when the vote overrules the mean).
     others = np.delete(mean, idx)
     out["headline"] = {
@@ -185,6 +182,8 @@ def _classify_hueview(ssr, patches, hv) -> Dict:
         "votes": {SCC_CLASS_ORDER[i]: int(v) for i, v in enumerate(votes) if v},
         "tied": bool(tied),
     }
+    out["full_face"] = {k: out["headline"][k]
+                        for k in ("scc", "probabilities", "confidence", "margin")}
     return out
 
 
@@ -327,7 +326,7 @@ def run_hueview(
                 **cls_r,
             })
 
-    # ---- headline SCC = majority vote of the 6 heads (tie: highest mean softmax) ----
+    # ---- headline SCC = Full Face: majority vote of the 5 regional heads (tie: highest mean softmax) ----
     head = cls["headline"] if cls else {}
     scc, probabilities = head.get("scc"), head.get("probabilities")
     confidence, margin = head.get("confidence"), head.get("margin")

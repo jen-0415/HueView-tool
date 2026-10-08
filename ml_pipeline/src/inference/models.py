@@ -3,9 +3,9 @@ Phase 14.2 -- Model loading (once, at startup)
 ================================================
 Baseline: baseline_effnet_final.h5.
 HueView: per-region weights from train.py v3 (manuscript-aligned: HSV-filtered
-skin masks, skimage CIELAB, 15-D full_face vector), "_final1" preferred,
-"_final" as the per-region fallback. All six vote on the final SCC
-(inference/hueview.py).
+skin masks, skimage CIELAB), the "_final" files that evaluate.py scored for
+the thesis. The five regions vote on the final SCC (Full Face,
+inference/hueview.py); there is no separate Full Face model.
 """
 
 from __future__ import annotations
@@ -20,14 +20,13 @@ logger = logging.getLogger(__name__)
 
 BASELINE_WEIGHTS_FILENAME = "baseline_effnet_final.h5"
 
-HUEVIEW_REGIONS = ["forehead", "left_cheek", "right_cheek", "nose_bridge", "jawline", "full_face"]
+HUEVIEW_REGIONS = ["forehead", "left_cheek", "right_cheek", "nose_bridge", "jawline"]
 # train.py run_tag suffixes, in order of preference. Each region loads the
-# first suffix whose model AND scaler both exist, so a region without a
-# "_final1" file (currently full_face) falls back to "_final". All of these
-# are train.py v3 weights (HSV skin masks, skimage CIELAB, 15-D full_face),
-# which is the input contract inference/hueview.py builds -- older
-# "_final_candidate" weights won't match it.
-HUEVIEW_SUFFIXES = ("_final1", "_final")
+# first suffix whose model AND scaler both exist. "_final" only: those are the
+# weights in results/model_provenance.csv, so the app gives the predictions
+# the thesis reports. ("_final1" is a different, unevaluated set of weights;
+# "_final_candidate" predates the train.py v3 input contract.)
+HUEVIEW_SUFFIXES = ("_final",)
 
 _models = {"baseline": None, "hueview": None}
 _files = {"baseline": None, "hueview": {}}   # what actually got loaded

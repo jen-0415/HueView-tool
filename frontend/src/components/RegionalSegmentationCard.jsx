@@ -2,8 +2,8 @@ import Card from "./Card";
 import { SCC, sccLabel } from "../constants";
 
 // HueView's regional path, end to end: where each region is on the face,
-// which pixels survived the skin filter, what each of the six models saw and
-// predicted, and how their votes become the final SCC.
+// which pixels survived the skin filter, what each of the five region models saw
+// and predicted, and how their votes become the final (Full Face) SCC.
 export default function RegionalSegmentationCard({ hueview }) {
   return (
     <Card>
@@ -110,7 +110,10 @@ function Figure({ n, src, caption }) {
 // probability used only to break a tie. Shown in full so the decision can be
 // checked by eye.
 export function DecisionTable({ hueview }) {
-  const regions = (hueview.regions ?? []).filter((r) => Array.isArray(r.probabilities));
+  // Full Face is the vote's result, not a voter, so it is left out of the table.
+  const regions = (hueview.regions ?? []).filter(
+    (r) => Array.isArray(r.probabilities) && r.region_key !== "full_face",
+  );
   if (regions.length === 0) return null;
   const mean = hueview.probabilities;
   const votes = hueview.votes ?? {};

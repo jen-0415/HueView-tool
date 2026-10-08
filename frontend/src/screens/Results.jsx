@@ -459,8 +459,8 @@ function DecisionPanel({ result }) {
         <Meaning>
           <p>
             HueView&apos;s final answer is <b>{sccText(hv)}</b>, the class picked by the most of
-            its six models — the five face regions and the full face
-            {hv.votes?.[hv.scc] != null ? ` (${hv.votes[hv.scc]} of 6)` : ""}
+            its five face-region models
+            {hv.votes?.[hv.scc] != null ? ` (${hv.votes[hv.scc]} of 5)` : ""}
             {hv.tied ? ". It was a tie, so the class with the higher average score won" : ""}.
           </p>
         </Meaning>
