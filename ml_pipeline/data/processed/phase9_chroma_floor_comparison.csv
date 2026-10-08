@@ -1,127 +1,127 @@
 rule,scc_label,undertone,percent
 centre 42.4 (reported),SCC-1,Cool,41.0
-centre 42.4 (reported),SCC-2,Cool,16.3
-centre 42.4 (reported),SCC-3,Cool,26.3
-centre 42.4 (reported),SCC-4,Cool,42.5
-centre 42.4 (reported),SCC-5,Cool,52.5
-centre 42.4 (reported),SCC-6,Cool,56.4
-centre 42.4 (reported),ALL,Cool,40.5
-centre 42.4 (reported),SCC-1,Neutral,12.3
-centre 42.4 (reported),SCC-2,Neutral,8.3
-centre 42.4 (reported),SCC-3,Neutral,19.5
-centre 42.4 (reported),SCC-4,Neutral,27.6
-centre 42.4 (reported),SCC-5,Neutral,27.8
-centre 42.4 (reported),SCC-6,Neutral,26.5
-centre 42.4 (reported),ALL,Neutral,21.0
-centre 42.4 (reported),SCC-1,Warm,46.6
-centre 42.4 (reported),SCC-2,Warm,75.4
-centre 42.4 (reported),SCC-3,Warm,54.2
-centre 42.4 (reported),SCC-4,Warm,29.9
-centre 42.4 (reported),SCC-5,Warm,19.7
-centre 42.4 (reported),SCC-6,Warm,17.1
-centre 42.4 (reported),ALL,Warm,38.5
-manuscript 60,SCC-1,Cool,71.4
-manuscript 60,SCC-2,Cool,41.8
-manuscript 60,SCC-3,Cool,67.9
-manuscript 60,SCC-4,Cool,91.7
-manuscript 60,SCC-5,Cool,96.1
-manuscript 60,SCC-6,Cool,95.7
-manuscript 60,ALL,Cool,79.2
-manuscript 60,SCC-1,Neutral,19.0
-manuscript 60,SCC-2,Neutral,22.2
-manuscript 60,SCC-3,Neutral,20.5
-manuscript 60,SCC-4,Neutral,7.1
-manuscript 60,SCC-5,Neutral,3.3
-manuscript 60,SCC-6,Neutral,2.6
-manuscript 60,ALL,Neutral,11.3
-manuscript 60,SCC-1,Warm,9.6
-manuscript 60,SCC-2,Warm,36.0
-manuscript 60,SCC-3,Warm,11.6
-manuscript 60,SCC-4,Warm,1.2
+centre 42.4 (reported),SCC-2,Cool,16.1
+centre 42.4 (reported),SCC-3,Cool,25.9
+centre 42.4 (reported),SCC-4,Cool,42.0
+centre 42.4 (reported),SCC-5,Cool,52.0
+centre 42.4 (reported),SCC-6,Cool,56.2
+centre 42.4 (reported),ALL,Cool,40.1
+centre 42.4 (reported),SCC-1,Neutral,12.0
+centre 42.4 (reported),SCC-2,Neutral,7.9
+centre 42.4 (reported),SCC-3,Neutral,18.7
+centre 42.4 (reported),SCC-4,Neutral,26.4
+centre 42.4 (reported),SCC-5,Neutral,27.3
+centre 42.4 (reported),SCC-6,Neutral,26.2
+centre 42.4 (reported),ALL,Neutral,20.4
+centre 42.4 (reported),SCC-1,Warm,47.0
+centre 42.4 (reported),SCC-2,Warm,76.0
+centre 42.4 (reported),SCC-3,Warm,55.4
+centre 42.4 (reported),SCC-4,Warm,31.7
+centre 42.4 (reported),SCC-5,Warm,20.6
+centre 42.4 (reported),SCC-6,Warm,17.6
+centre 42.4 (reported),ALL,Warm,39.5
+manuscript 60,SCC-1,Cool,71.0
+manuscript 60,SCC-2,Cool,41.1
+manuscript 60,SCC-3,Cool,66.6
+manuscript 60,SCC-4,Cool,91.0
+manuscript 60,SCC-5,Cool,95.8
+manuscript 60,SCC-6,Cool,95.8
+manuscript 60,ALL,Cool,78.7
+manuscript 60,SCC-1,Neutral,19.1
+manuscript 60,SCC-2,Neutral,22.3
+manuscript 60,SCC-3,Neutral,21.4
+manuscript 60,SCC-4,Neutral,7.7
+manuscript 60,SCC-5,Neutral,3.5
+manuscript 60,SCC-6,Neutral,2.4
+manuscript 60,ALL,Neutral,11.5
+manuscript 60,SCC-1,Warm,9.9
+manuscript 60,SCC-2,Warm,36.5
+manuscript 60,SCC-3,Warm,12.0
+manuscript 60,SCC-4,Warm,1.4
 manuscript 60,SCC-5,Warm,0.7
-manuscript 60,SCC-6,Warm,1.7
-manuscript 60,ALL,Warm,9.5
+manuscript 60,SCC-6,Warm,1.8
+manuscript 60,ALL,Warm,9.7
 centre 42.4 + C*>=10,SCC-1,Cool,40.2
-centre 42.4 + C*>=10,SCC-2,Cool,13.3
-centre 42.4 + C*>=10,SCC-3,Cool,26.0
-centre 42.4 + C*>=10,SCC-4,Cool,41.9
-centre 42.4 + C*>=10,SCC-5,Cool,49.0
-centre 42.4 + C*>=10,SCC-6,Cool,49.2
-centre 42.4 + C*>=10,ALL,Cool,38.0
-centre 42.4 + C*>=10,SCC-1,Neutral,12.8
-centre 42.4 + C*>=10,SCC-2,Neutral,8.8
-centre 42.4 + C*>=10,SCC-3,Neutral,19.8
-centre 42.4 + C*>=10,SCC-4,Neutral,28.2
-centre 42.4 + C*>=10,SCC-5,Neutral,29.6
-centre 42.4 + C*>=10,SCC-6,Neutral,30.0
-centre 42.4 + C*>=10,ALL,Neutral,22.1
-centre 42.4 + C*>=10,SCC-1,Warm,45.5
-centre 42.4 + C*>=10,SCC-2,Warm,63.4
-centre 42.4 + C*>=10,SCC-3,Warm,53.1
-centre 42.4 + C*>=10,SCC-4,Warm,29.6
-centre 42.4 + C*>=10,SCC-5,Warm,19.7
-centre 42.4 + C*>=10,SCC-6,Warm,15.5
-centre 42.4 + C*>=10,ALL,Warm,36.0
+centre 42.4 + C*>=10,SCC-2,Cool,13.2
+centre 42.4 + C*>=10,SCC-3,Cool,25.8
+centre 42.4 + C*>=10,SCC-4,Cool,41.3
+centre 42.4 + C*>=10,SCC-5,Cool,48.5
+centre 42.4 + C*>=10,SCC-6,Cool,48.8
+centre 42.4 + C*>=10,ALL,Cool,37.7
+centre 42.4 + C*>=10,SCC-1,Neutral,12.3
+centre 42.4 + C*>=10,SCC-2,Neutral,8.6
+centre 42.4 + C*>=10,SCC-3,Neutral,19.2
+centre 42.4 + C*>=10,SCC-4,Neutral,27.3
+centre 42.4 + C*>=10,SCC-5,Neutral,29.5
+centre 42.4 + C*>=10,SCC-6,Neutral,30.5
+centre 42.4 + C*>=10,ALL,Neutral,21.8
+centre 42.4 + C*>=10,SCC-1,Warm,46.0
+centre 42.4 + C*>=10,SCC-2,Warm,64.3
+centre 42.4 + C*>=10,SCC-3,Warm,54.1
+centre 42.4 + C*>=10,SCC-4,Warm,31.0
+centre 42.4 + C*>=10,SCC-5,Warm,20.3
+centre 42.4 + C*>=10,SCC-6,Warm,15.3
+centre 42.4 + C*>=10,ALL,Warm,36.7
 centre 42.4 + C*>=10,SCC-1,Indeterminate,1.5
-centre 42.4 + C*>=10,SCC-2,Indeterminate,14.5
-centre 42.4 + C*>=10,SCC-3,Indeterminate,1.0
+centre 42.4 + C*>=10,SCC-2,Indeterminate,13.9
+centre 42.4 + C*>=10,SCC-3,Indeterminate,0.9
 centre 42.4 + C*>=10,SCC-4,Indeterminate,0.3
 centre 42.4 + C*>=10,SCC-5,Indeterminate,1.7
 centre 42.4 + C*>=10,SCC-6,Indeterminate,5.3
-centre 42.4 + C*>=10,ALL,Indeterminate,3.9
-centre 42.4 + C*>=13,SCC-1,Cool,39.2
-centre 42.4 + C*>=13,SCC-2,Cool,11.6
-centre 42.4 + C*>=13,SCC-3,Cool,25.6
-centre 42.4 + C*>=13,SCC-4,Cool,40.8
-centre 42.4 + C*>=13,SCC-5,Cool,46.3
-centre 42.4 + C*>=13,SCC-6,Cool,43.4
-centre 42.4 + C*>=13,ALL,Cool,36.1
-centre 42.4 + C*>=13,SCC-1,Neutral,13.0
-centre 42.4 + C*>=13,SCC-2,Neutral,9.3
-centre 42.4 + C*>=13,SCC-3,Neutral,19.7
-centre 42.4 + C*>=13,SCC-4,Neutral,28.7
-centre 42.4 + C*>=13,SCC-5,Neutral,30.6
-centre 42.4 + C*>=13,SCC-6,Neutral,30.7
-centre 42.4 + C*>=13,ALL,Neutral,22.7
-centre 42.4 + C*>=13,SCC-1,Warm,45.2
-centre 42.4 + C*>=13,SCC-2,Warm,55.3
-centre 42.4 + C*>=13,SCC-3,Warm,51.2
-centre 42.4 + C*>=13,SCC-4,Warm,29.2
-centre 42.4 + C*>=13,SCC-5,Warm,18.5
-centre 42.4 + C*>=13,SCC-6,Warm,13.1
-centre 42.4 + C*>=13,ALL,Warm,33.7
-centre 42.4 + C*>=13,SCC-1,Indeterminate,2.7
-centre 42.4 + C*>=13,SCC-2,Indeterminate,23.8
-centre 42.4 + C*>=13,SCC-3,Indeterminate,3.5
+centre 42.4 + C*>=10,ALL,Indeterminate,3.8
+centre 42.4 + C*>=13,SCC-1,Cool,39.4
+centre 42.4 + C*>=13,SCC-2,Cool,11.7
+centre 42.4 + C*>=13,SCC-3,Cool,25.3
+centre 42.4 + C*>=13,SCC-4,Cool,40.2
+centre 42.4 + C*>=13,SCC-5,Cool,45.9
+centre 42.4 + C*>=13,SCC-6,Cool,43.1
+centre 42.4 + C*>=13,ALL,Cool,35.9
+centre 42.4 + C*>=13,SCC-1,Neutral,12.6
+centre 42.4 + C*>=13,SCC-2,Neutral,9.0
+centre 42.4 + C*>=13,SCC-3,Neutral,19.3
+centre 42.4 + C*>=13,SCC-4,Neutral,27.9
+centre 42.4 + C*>=13,SCC-5,Neutral,30.4
+centre 42.4 + C*>=13,SCC-6,Neutral,31.3
+centre 42.4 + C*>=13,ALL,Neutral,22.4
+centre 42.4 + C*>=13,SCC-1,Warm,45.4
+centre 42.4 + C*>=13,SCC-2,Warm,57.0
+centre 42.4 + C*>=13,SCC-3,Warm,52.4
+centre 42.4 + C*>=13,SCC-4,Warm,30.5
+centre 42.4 + C*>=13,SCC-5,Warm,19.1
+centre 42.4 + C*>=13,SCC-6,Warm,12.8
+centre 42.4 + C*>=13,ALL,Warm,34.5
+centre 42.4 + C*>=13,SCC-1,Indeterminate,2.6
+centre 42.4 + C*>=13,SCC-2,Indeterminate,22.3
+centre 42.4 + C*>=13,SCC-3,Indeterminate,3.0
 centre 42.4 + C*>=13,SCC-4,Indeterminate,1.4
-centre 42.4 + C*>=13,SCC-5,Indeterminate,4.6
+centre 42.4 + C*>=13,SCC-5,Indeterminate,4.5
 centre 42.4 + C*>=13,SCC-6,Indeterminate,12.8
-centre 42.4 + C*>=13,ALL,Indeterminate,7.6
+centre 42.4 + C*>=13,ALL,Indeterminate,7.2
 centre 42.4 + C*>=20,SCC-1,Cool,28.3
-centre 42.4 + C*>=20,SCC-2,Cool,8.2
-centre 42.4 + C*>=20,SCC-3,Cool,20.4
-centre 42.4 + C*>=20,SCC-4,Cool,31.9
-centre 42.4 + C*>=20,SCC-5,Cool,34.2
-centre 42.4 + C*>=20,SCC-6,Cool,22.8
-centre 42.4 + C*>=20,ALL,Cool,26.4
-centre 42.4 + C*>=20,SCC-1,Neutral,12.6
-centre 42.4 + C*>=20,SCC-2,Neutral,8.4
-centre 42.4 + C*>=20,SCC-3,Neutral,15.7
-centre 42.4 + C*>=20,SCC-4,Neutral,27.5
-centre 42.4 + C*>=20,SCC-5,Neutral,26.3
-centre 42.4 + C*>=20,SCC-6,Neutral,21.6
-centre 42.4 + C*>=20,ALL,Neutral,19.9
-centre 42.4 + C*>=20,SCC-1,Warm,40.1
-centre 42.4 + C*>=20,SCC-2,Warm,44.7
-centre 42.4 + C*>=20,SCC-3,Warm,42.2
-centre 42.4 + C*>=20,SCC-4,Warm,27.2
-centre 42.4 + C*>=20,SCC-5,Warm,16.1
-centre 42.4 + C*>=20,SCC-6,Warm,6.6
-centre 42.4 + C*>=20,ALL,Warm,28.7
-centre 42.4 + C*>=20,SCC-1,Indeterminate,19.0
-centre 42.4 + C*>=20,SCC-2,Indeterminate,38.7
-centre 42.4 + C*>=20,SCC-3,Indeterminate,21.6
+centre 42.4 + C*>=20,SCC-2,Cool,8.1
+centre 42.4 + C*>=20,SCC-3,Cool,20.1
+centre 42.4 + C*>=20,SCC-4,Cool,31.6
+centre 42.4 + C*>=20,SCC-5,Cool,34.0
+centre 42.4 + C*>=20,SCC-6,Cool,23.5
+centre 42.4 + C*>=20,ALL,Cool,26.3
+centre 42.4 + C*>=20,SCC-1,Neutral,12.2
+centre 42.4 + C*>=20,SCC-2,Neutral,8.2
+centre 42.4 + C*>=20,SCC-3,Neutral,15.9
+centre 42.4 + C*>=20,SCC-4,Neutral,26.9
+centre 42.4 + C*>=20,SCC-5,Neutral,26.2
+centre 42.4 + C*>=20,SCC-6,Neutral,21.3
+centre 42.4 + C*>=20,ALL,Neutral,19.7
+centre 42.4 + C*>=20,SCC-1,Warm,41.0
+centre 42.4 + C*>=20,SCC-2,Warm,45.6
+centre 42.4 + C*>=20,SCC-3,Warm,43.2
+centre 42.4 + C*>=20,SCC-4,Warm,28.1
+centre 42.4 + C*>=20,SCC-5,Warm,16.6
+centre 42.4 + C*>=20,SCC-6,Warm,7.0
+centre 42.4 + C*>=20,ALL,Warm,29.4
+centre 42.4 + C*>=20,SCC-1,Indeterminate,18.5
+centre 42.4 + C*>=20,SCC-2,Indeterminate,38.1
+centre 42.4 + C*>=20,SCC-3,Indeterminate,20.7
 centre 42.4 + C*>=20,SCC-4,Indeterminate,13.4
-centre 42.4 + C*>=20,SCC-5,Indeterminate,23.4
-centre 42.4 + C*>=20,SCC-6,Indeterminate,48.9
-centre 42.4 + C*>=20,ALL,Indeterminate,25.0
+centre 42.4 + C*>=20,SCC-5,Indeterminate,23.2
+centre 42.4 + C*>=20,SCC-6,Indeterminate,48.2
+centre 42.4 + C*>=20,ALL,Indeterminate,24.6
