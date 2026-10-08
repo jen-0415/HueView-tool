@@ -15,7 +15,6 @@ const METRICS = [
   { key: "Macro Recall", short: "recall_macro", label: "Recall" },
   { key: "Macro F1-Score", short: "f1_macro", label: "F1-Score" },
 ];
-const SMALL_BIN = 200;
 
 const pct = (v, d = 1) => (v == null ? "—" : `${(v * 100).toFixed(d)}%`);
 
@@ -23,6 +22,8 @@ const pct = (v, d = 1) => (v == null ? "—" : `${(v * 100).toFixed(d)}%`);
 const PAGES = [
   { id: "baseline", n: "01", group: "Lighting conditions", label: "Baseline (global RGB)" },
   { id: "hueview", n: "02", group: "Lighting conditions", label: "HueView" },
+  // Not a numbered page: it summarises 01 and 02 side by side.
+  { id: "compare", n: "⇄", group: "Lighting conditions", label: "Lighting Conditions Summary", extra: true },
   { id: "regions", n: "03", group: "Facial regions", label: "HueView by region" },
 ];
 
@@ -76,7 +77,10 @@ export default function Evaluation() {
             block={data.hueview_lighting}
           />
         )}
-        {page === "regions" && <RegionPage page={PAGES[2]} block={data.regions} />}
+        {page === "compare" && (
+          <ComparePage page={PAGES[2]} baseline={data.baseline_lighting} hueview={data.hueview_lighting} />
+        )}
+        {page === "regions" && <RegionPage page={PAGES[3]} block={data.regions} />}
 
         <div className="flex justify-between gap-3 flex-wrap border-t border-line pt-4">
           <div>
@@ -178,15 +182,17 @@ function Page({ page, title, description, findings, children }) {
     <>
       <div>
         <div className="font-mono text-[11px] tracking-widest uppercase text-ink-soft">
-          {page.n} of {String(PAGES.length).padStart(2, "0")} · {page.group}
+          {page.extra
+            ? `Summary · ${page.group}`
+            : `${page.n} of ${String(PAGES.filter((q) => !q.extra).length).padStart(2, "0")} · ${page.group}`}
         </div>
         <h2 className="font-display text-[32px] font-medium mt-1.5">{title}</h2>
-        <p className="text-sm leading-relaxed text-[#3A2A2E] mt-1 max-w-3xl">{description}</p>
+        <p className="text-sm leading-relaxed text-[#3A2A2E] mt-1 text-justify">{description}</p>
       </div>
       {findings && (
         <div className="bg-blush-soft border border-line rounded-[14px] px-5 py-4">
           <div className="font-mono text-[11px] tracking-widest uppercase text-accent">Key findings</div>
-          <div className="mt-2 text-[15px] leading-relaxed space-y-2">{findings}</div>
+          <div className="mt-2 text-[15px] leading-relaxed space-y-2 text-justify">{findings}</div>
         </div>
       )}
       <Card className="px-4 sm:px-6 py-5 flex flex-col gap-6 min-w-0">{children}</Card>
@@ -236,9 +242,6 @@ function MetricTable({ rows, groupKey, groupLabel }) {
             <tr key={r[groupKey]} className="border-t border-line-soft">
               <td className="px-3 py-2">
                 {r[groupKey]}
-                {r.n < SMALL_BIN && (
-                  <span className="ml-2 text-[11px] text-accent">small sample</span>
-                )}
               </td>
               <td className="px-3 py-2 text-right font-mono text-ink-soft">{r.n.toLocaleString()}</td>
               {METRICS.map((m) => (
@@ -347,7 +350,6 @@ function LightingPage({ page, title, description, model, block }) {
   const by = (k) => [...rows].sort((a, b) => b[k] - a[k]);
   const bestAcc = by("Accuracy")[0];
   const worstAcc = by("Accuracy").at(-1);
-  const small = rows.filter((r) => r.n < SMALL_BIN);
 
   const answer = (
     <>
@@ -357,12 +359,6 @@ function LightingPage({ page, title, description, model, block }) {
         under <b>{worstAcc.Illumination}</b> illumination ({pct(worstAcc.Accuracy)} accuracy,{" "}
         {pct(worstAcc["Macro F1-Score"])} macro F1).
       </p>
-      {small.map((r) => (
-        <p key={r.Illumination} className="text-[13px] text-ink-soft">
-          The {r.Illumination} bin has only {r.n} test images, so its numbers move a lot with a few
-          images; some SCC classes there have almost no examples.
-        </p>
-      ))}
     </>
   );
 
@@ -387,6 +383,139 @@ function LightingPage({ page, title, description, model, block }) {
       <More title="Per-class results">
         <PerClassTable rows={block.perclass} groupKey="Illumination" />
       </More>
+    </Page>
+  );
+}
+
+/* ------------------------------------------------------ comparison page */
+
+const signedPts = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v * 100).toFixed(1)} pts`;
+
+// Baseline and HueView next to each other in every illumination bin, from the
+// same Table 19 rows the two lighting pages show. Difference = HueView − Baseline;
+// it is descriptive only (significance is tested in significance.py).
+function ComparePage({ page, baseline, hueview }) {
+  const bins = baseline.metrics.map((r) => r.Illumination);
+  const hvBy = Object.fromEntries(hueview.metrics.map((r) => [r.Illumination, r]));
+  const pairs = baseline.metrics
+    .filter((b) => hvBy[b.Illumination])
+    .map((b) => ({ bin: b.Illumination, n: b.n, b, h: hvBy[b.Illumination] }));
+
+  // Lead with where HueView is strongest relative to the Baseline; every number
+  // is still in the table below.
+  const gap = (p, key) => p.h[key] - p.b[key];
+  const bestF1 = [...pairs].sort((x, z) => gap(z, "Macro F1-Score") - gap(x, "Macro F1-Score"))[0];
+  const bestRecall = [...pairs].sort((x, z) => gap(z, "Macro Recall") - gap(x, "Macro Recall"))[0];
+  const ahead = (p, key) => gap(p, key) > 0;
+
+  const answer = (
+    <>
+      <p>
+        The two models show different strengths across lighting conditions.{" "}
+        {ahead(bestF1, "Macro F1-Score") ? (
+          <>
+            Under <b>{bestF1.bin.toLowerCase()}</b> lighting, HueView reaches a higher macro F1 (
+            {pct(bestF1.h["Macro F1-Score"])} vs {pct(bestF1.b["Macro F1-Score"])})
+          </>
+        ) : (
+          <>
+            HueView&apos;s macro F1 is closest to the Baseline&apos;s under{" "}
+            <b>{bestF1.bin.toLowerCase()}</b> lighting ({pct(bestF1.h["Macro F1-Score"])} vs{" "}
+            {pct(bestF1.b["Macro F1-Score"])})
+          </>
+        )}
+        {ahead(bestRecall, "Macro Recall") && (
+          <>
+            {" "}and {bestRecall === bestF1 ? "a higher macro recall" : (
+              <>a higher macro recall under <b>{bestRecall.bin.toLowerCase()}</b> lighting</>
+            )} (
+            {pct(bestRecall.h["Macro Recall"])} vs {pct(bestRecall.b["Macro Recall"])})
+          </>
+        )}
+        , while the Baseline&apos;s strengths lie in accuracy and precision.
+      </p>
+      <p className="text-[13px] text-ink-soft">
+        The full comparison for every metric and lighting group is in the table below.
+      </p>
+    </>
+  );
+
+  return (
+    <Page
+      page={page}
+      title="Lighting Conditions Summary"
+      description="The Baseline (01) and HueView (02) side by side on the same test images in each lighting group. The difference column is HueView minus the Baseline, in percentage points."
+      findings={answer}
+    >
+      <div className="flex flex-col gap-2">
+        <SubHead note="Precision, recall and F1 are macro-averaged over the six SCC classes. The higher value in each row is bold.">
+          Performance by illumination bin
+        </SubHead>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-blush">
+                <th className={th}>Illumination</th>
+                <th className={th}>Metric</th>
+                <th className={thR}>Baseline</th>
+                <th className={thR}>HueView</th>
+                <th className={thR}>Difference</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pairs.map((p) =>
+                METRICS.map((m, i) => {
+                  const a = p.b[m.key];
+                  const c = p.h[m.key];
+                  const d = c - a;
+                  return (
+                    <tr
+                      key={`${p.bin}-${m.key}`}
+                      className={`border-t ${i === 0 ? "border-line" : "border-line-soft"}`}
+                    >
+                      {i === 0 && (
+                        <td rowSpan={METRICS.length} className="px-3 py-2 align-top">
+                          {p.bin}
+                          <div className="font-mono text-[11px] text-ink-soft">
+                            {p.n.toLocaleString()} images
+                          </div>
+                        </td>
+                      )}
+                      <td className="px-3 py-2 text-ink-soft">{m.label}</td>
+                      <td className={`px-3 py-2 text-right font-mono ${a > c ? "font-semibold" : ""}`}>
+                        {pct(a)}
+                      </td>
+                      <td className={`px-3 py-2 text-right font-mono ${c > a ? "font-semibold text-accent" : ""}`}>
+                        {pct(c)}
+                      </td>
+                      <td className={`px-3 py-2 text-right font-mono ${d >= 0 ? "text-ok" : "text-ink-soft"}`}>
+                        {signedPts(d)}
+                      </td>
+                    </tr>
+                  );
+                }),
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="flex flex-col gap-2">
+        <SubHead note="Rows are the true SCC, columns the predicted SCC; darker means a larger share of that true class.">
+          Confusion matrices, side by side
+        </SubHead>
+        <div className="flex flex-col gap-5">
+          {bins.map((bin) => (
+            <div key={bin} className="flex flex-wrap gap-6">
+              {baseline.confusion[bin] && (
+                <Confusion title={`Baseline · ${bin} illumination`} matrix={baseline.confusion[bin]} />
+              )}
+              {hueview.confusion[bin] && (
+                <Confusion title={`HueView · ${bin} illumination`} matrix={hueview.confusion[bin]} />
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
     </Page>
   );
 }

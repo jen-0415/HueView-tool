@@ -74,10 +74,6 @@ export default function ResultsSidebar({ stage, onPick, preview, onReset }) {
         </NavButton>
       </Card>
 
-      <p className="hidden lg:block text-xs text-ink-soft leading-relaxed px-1">
-        Every stage stays here after the analysis, so you can go back and see what each step did
-        to your photo.
-      </p>
     </nav>
   );
 }

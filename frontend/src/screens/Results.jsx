@@ -103,7 +103,7 @@ function Happened({ children }) {
       <div className="font-mono text-[11px] tracking-widest uppercase text-ink-soft mb-1.5">
         What happened
       </div>
-      <p className="text-sm leading-relaxed text-[#3A2A2E] mb-4">{children}</p>
+      <p className="text-sm leading-relaxed text-[#3A2A2E] mb-4 text-justify">{children}</p>
     </>
   );
 }
@@ -114,7 +114,7 @@ function Meaning({ children }) {
       <div className="font-mono text-[11px] tracking-widest uppercase text-accent">
         What this means
       </div>
-      <div className="mt-2 text-[15px] leading-relaxed space-y-2">{children}</div>
+      <div className="mt-2 text-[15px] leading-relaxed space-y-2 text-justify">{children}</div>
     </div>
   );
 }
@@ -245,8 +245,7 @@ function DetectPanel({ result, preview }) {
       </Card>
       <Meaning>
         <p>
-          {d.landmarks_found} of 5 key points were found. Every later stage works on the
-          cropped face shown here.
+          {d.landmarks_found} of 5 key points were found.
         </p>
       </Meaning>
     </>
@@ -335,8 +334,7 @@ function SsrPanel({ ssrPreview }) {
         <p>
           HueView reads skin color from the corrected face (the last image, outlined), so a
           shadow on one cheek is less likely to be mistaken for darker skin. The Baseline uses
-          the original photo. The correction can also remove some real color, which is why the
-          study tests whether it helps instead of assuming it does.
+          the original photo.
         </p>
       </Meaning>
     </>
@@ -380,7 +378,10 @@ function SkinPanel({ result }) {
   );
   const fewest = measured.reduce((m, r) => (!m || r.pixels < m.pixels ? r : m), null);
   const darkest = measured.reduce((m, r) => (!m || r.L < m.L ? r : m), null);
-  const excluded = (hueview.regions ?? []).filter((r) => r.used === false);
+  // Full Face is the five areas' average, never a skipped area.
+  const excluded = (hueview.regions ?? []).filter(
+    (r) => r.used === false && r.region_key !== "full_face",
+  );
 
   return (
     <>
@@ -390,20 +391,21 @@ function SkinPanel({ result }) {
       <Meaning>
         {fewest && darkest ? (
           <p>
-            {measured.length} areas had enough skin to measure.{" "}
-            <b>{fewest.name}</b> had the least skin ({fewest.pixels.toLocaleString()} pixels),
-            so its reading is the least reliable in this photo. <b>{darkest.name}</b> is the
-            darkest area (lightness {darkest.L}).
+            Skin color was measured in {measured.length} of the 5 face{" "}
+            {measured.length === 1 ? "area" : "areas"}. The <b>{fewest.name}</b> reading is based on
+            the fewest skin pixels ({fewest.pixels.toLocaleString()}), so it is the least certain.
+            The <b>{darkest.name}</b> is the darkest area, with the lowest lightness (L* {darkest.L}).
             {excluded.length > 0 &&
-              ` ${excluded.map((r) => r.name).join(", ")} ${
-                excluded.length === 1 ? "was" : "were"
-              } excluded.`}
+              ` ${excluded.map((r) => r.name).join(", ")} had too little skin to measure, so ${
+                excluded.length === 1 ? "its value was" : "their values were"
+              } filled in from the other areas.`}
           </p>
         ) : (
           <p>No area had enough skin to measure.</p>
         )}
         <p className="text-xs text-ink-soft">
-          L* = lightness (0 is black, 100 is white) · a* = how red · b* = how yellow.
+          L* is lightness, from 0 (black) to 100 (white). a* runs from green (−) to red (+),
+          and b* from blue (−) to yellow (+).
         </p>
       </Meaning>
     </>
@@ -513,12 +515,12 @@ function ComparePanel({ result }) {
               a="The whole cropped photo and its average color"
               b="Skin from five face areas plus the whole face, after lighting correction"
             />
-            <Row k="Predicted class" a={sccText(baseline)} b={sccText(hueview)} highlight />
             <Row k="Color space" a="RGB" b="CIELAB" />
             <Row
-              k="How undertone is found"
-              a="How much blue is in the average color"
-              b="The color direction (hue) of each face area"
+              k="Predicted skin tone class"
+              a={sccText(baseline)}
+              b={sccText(hueview)}
+              highlight
             />
             <Row
               k="Undertone"
@@ -527,6 +529,10 @@ function ComparePanel({ result }) {
             />
           </tbody>
         </table>
+        <p className="px-5 py-3 border-t border-line-soft text-[11px] italic text-ink-soft">
+          How undertone is found: the Baseline uses how much blue is in the average color; HueView
+          uses the color direction (hue) of each face area.
+        </p>
       </Card>
       {bothPredicted && (
         <Meaning>

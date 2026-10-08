@@ -123,7 +123,7 @@ export function DecisionTable({ hueview }) {
     <div className="border-t border-line-soft">
       <div className="px-6 pt-4">
         <div className="font-mono text-[11px] font-semibold">How the final answer is chosen</div>
-        <p className="text-[12px] text-ink-soft mt-1 max-w-3xl">{hueview.decision?.description}</p>
+        <p className="text-[12px] leading-relaxed text-ink-soft mt-1 text-justify">{hueview.decision?.description}</p>
       </div>
       <div className="overflow-x-auto px-6 py-4">
         <table className="w-full font-mono text-xs">

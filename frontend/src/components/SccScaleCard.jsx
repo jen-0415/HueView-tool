@@ -14,7 +14,7 @@ export default function SccScaleCard({ predicted }) {
       </div>
 
       <div className="px-6 py-5">
-        <p className="text-[13px] leading-relaxed text-ink-soft max-w-3xl">
+        <p className="text-[13px] leading-relaxed text-ink-soft text-justify">
           {SCC_MEANING.basis}
         </p>
 
@@ -44,7 +44,7 @@ export default function SccScaleCard({ predicted }) {
           })}
         </ul>
 
-        <p className="text-[12px] text-ink-soft mt-4">
+        <p className="text-[12px] leading-relaxed text-ink-soft mt-4 text-justify">
           Neighbouring MST steps share a cluster, so two faces one MST step apart can land in the
           same SCC class. The ground truth for every test photo is its MST label mapped this way
           (<span className="font-mono">add_scc_labels.py</span>), not a separate SCC annotation.

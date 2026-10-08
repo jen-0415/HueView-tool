@@ -22,29 +22,29 @@ export default function RegionTable({ regions }) {
           </tr>
         </thead>
         <tbody>
-          {regions.map((r) => (
+          {regions.map((r) => {
+            // Full Face is not a sixth skin area: its colour is the five areas'
+            // average, so the backend marks it used: false. It is not excluded.
+            const whole = r.region_key === "full_face";
+            return (
             <tr
               key={r.name}
-              className={`border-t border-line-soft ${r.used ? "" : "opacity-50"}`}
+              className={`border-t border-line-soft ${r.used || whole ? "" : "opacity-50"}`}
             >
               <td className="px-5 py-3 text-ink">{r.name}</td>
               <td className="px-5 py-3">{r.L ?? "—"}</td>
               <td className="px-5 py-3">{r.a ?? "—"}</td>
               <td className="px-5 py-3">{r.b ?? "—"}</td>
               <td className="px-5 py-3">{r.pixels.toLocaleString()}</td>
-              <td className={`px-5 py-3 ${r.used ? "text-ok" : "text-ink-soft"}`}>
-                {r.used ? "yes" : "excluded"}
+              <td className={`px-5 py-3 ${r.used || whole ? "text-ok" : "text-ink-soft"}`}>
+                {whole ? "average" : r.used ? "yes" : "excluded"}
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
 
-      <p className="px-6 py-3 text-xs text-ink-soft">
-        &ldquo;Excluded&rdquo; areas had too little skin to measure, so values from the other
-        areas fill in for them. The Full Face row sums up the five areas; its own model casts
-        the sixth vote on the final result.
-      </p>
     </Card>
   );
 }
