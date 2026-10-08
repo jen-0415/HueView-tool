@@ -17,14 +17,36 @@ support at 2.11, so on Windows this runs on CPU regardless of hardware —
 43k images through EfficientNetB0 would take days. See the Colab notes
 at the bottom of this file.
 
-Everything is checkpointed. If the session dies mid-run, rerun and it
-picks up from the last saved epoch rather than starting over.
+Every file this script writes carries the "final" tag, so a retrain never
+overwrites artifacts from earlier runs:
+
+    models/baseline_stage1_final_best.keras     best stage-1 checkpoint
+    models/baseline_stage2_final_best.keras     best stage-2 checkpoint
+    models/baseline_effnet_final.keras          the model to evaluate
+    models/baseline_effnet_final.h5             same model, legacy format
+    logs/baseline_stage1_final.csv              per-epoch metrics
+    logs/baseline_stage2_final.csv
+    logs/baseline_stage1_final_done.json        stage-complete markers
+    logs/baseline_stage2_final_done.json
+    logs/baseline_training_summary_final.json
+    backups/baseline_stage1_final/              mid-stage resume state
+    backups/baseline_stage2_final/              (deleted when a stage ends)
+
+Resuming: if the session dies mid-stage, rerun the same command. The stage
+continues from its last completed epoch, and a stage that already finished
+is skipped (its best checkpoint is loaded instead). To throw away a
+previous final run and start over, pass --fresh.
+
+Smoke-test runs (--limit) are tagged "smoke" instead of "final", so they
+can never overwrite, or be resumed into, the real run.
 
     python src/baseline/train.py
 """
 
 import argparse
+import csv
 import json
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -36,11 +58,16 @@ try:
     from ml_pipeline.src.baseline.data_pipeline import build_datasets, SCC_CLASSES
     from ml_pipeline.src.baseline.model import build_baseline_model, unfreeze_for_finetuning
 except ImportError:
-    from ml_pipeline.src.baseline.data_pipeline import build_datasets, SCC_CLASSES
-    from ml_pipeline.src.baseline.model import build_baseline_model, unfreeze_for_finetuning
+    # Run directly as `python src/baseline/train.py`: Python puts this
+    # script's own folder on sys.path, so the sibling modules import by name.
+    from data_pipeline import build_datasets, SCC_CLASSES
+    from model import build_baseline_model, unfreeze_for_finetuning
 
 MODELS = Path("models")
 LOGS = Path("logs")
+BACKUPS = Path("backups")
+
+TAG = "final"  # switched to "smoke" for --limit runs
 
 STAGE1_EPOCHS = 15
 STAGE2_EPOCHS = 20
@@ -49,9 +76,80 @@ STAGE2_LR = 1e-5
 PATIENCE = 5
 
 
-def callbacks_for(stage: str, monitor: str = "val_loss"):
+# ---------------------------------------------------------------------
+# File names — every artifact goes through these, so the tag is
+# applied consistently.
+# ---------------------------------------------------------------------
+def ckpt_path(stage: str) -> Path:
+    return MODELS / f"baseline_{stage}_{TAG}_best.keras"
+
+
+def csv_path(stage: str) -> Path:
+    return LOGS / f"baseline_{stage}_{TAG}.csv"
+
+
+def done_marker(stage: str) -> Path:
+    return LOGS / f"baseline_{stage}_{TAG}_done.json"
+
+
+def backup_dir(stage: str) -> Path:
+    return BACKUPS / f"baseline_{stage}_{TAG}"
+
+
+def final_keras() -> Path:
+    return MODELS / f"baseline_effnet_{TAG}.keras"
+
+
+def final_h5() -> Path:
+    return MODELS / f"baseline_effnet_{TAG}.h5"
+
+
+def summary_path() -> Path:
+    return LOGS / f"baseline_training_summary_{TAG}.json"
+
+
+def wipe_tagged_artifacts():
+    """Delete every file from a previous run with the current tag."""
+    removed = 0
+    for folder in (MODELS, LOGS):
+        if folder.exists():
+            for p in folder.glob(f"baseline_*_{TAG}*"):
+                if p.is_file():
+                    p.unlink()
+                    removed += 1
+    if BACKUPS.exists():
+        for p in BACKUPS.glob(f"baseline_*_{TAG}"):
+            shutil.rmtree(p, ignore_errors=True)
+            removed += 1
+    if removed:
+        print(f"  Removed {removed} existing '{TAG}' artifact(s).")
+
+
+# ---------------------------------------------------------------------
+# Metrics come from the CSV log rather than the History object, because
+# after a resume History only covers the epochs run in this session.
+# ---------------------------------------------------------------------
+def best_from_csv(stage: str):
+    """Best epoch by val_loss, with the val_accuracy *of that same epoch*."""
+    p = csv_path(stage)
+    if not p.exists():
+        return None
+    with open(p, newline="") as f:
+        rows = [r for r in csv.DictReader(f) if r.get("val_loss")]
+    if not rows:
+        return None
+    best = min(rows, key=lambda r: float(r["val_loss"]))
+    return {
+        "best_epoch": int(best["epoch"]) + 1,
+        "val_loss": round(float(best["val_loss"]), 4),
+        "val_accuracy": round(float(best.get("val_accuracy") or "nan"), 4),
+        "epochs_run": len(rows),
+    }
+
+
+def callbacks_for(stage: str, prior_best_loss=None):
     """
-    Checkpoint + early stopping + LR reduction.
+    Checkpoint + early stopping + LR reduction + resume.
 
     Monitors val_loss, as the methodology specifies. Loss is the more
     sensitive signal on imbalanced data: accuracy can sit flat for several
@@ -60,34 +158,70 @@ def callbacks_for(stage: str, monitor: str = "val_loss"):
     majority class.
 
     save_best_only means an overfitting tail can't overwrite a good
-    checkpoint. restore_best_weights means the model you keep is the best
-    one seen, not whatever the last epoch produced.
+    checkpoint. On a resume, initial_value_threshold carries the best
+    val_loss seen before the crash, so the first resumed epoch can't
+    overwrite a better checkpoint either.
+
+    The checkpoint file, not EarlyStopping's restore_best_weights, is
+    the source of truth: run_stage reloads it after fit(), because
+    restore_best_weights only knows about epochs from the current session.
     """
     MODELS.mkdir(exist_ok=True)
     LOGS.mkdir(exist_ok=True)
+    BACKUPS.mkdir(exist_ok=True)
 
     return [
+        keras.callbacks.BackupAndRestore(backup_dir=str(backup_dir(stage))),
         keras.callbacks.ModelCheckpoint(
-            filepath=str(MODELS / f"baseline_{stage}_best.keras"),
-            monitor=monitor, mode="min",
+            filepath=str(ckpt_path(stage)),
+            monitor="val_loss", mode="min",
             save_best_only=True, verbose=1,
+            initial_value_threshold=prior_best_loss,
         ),
         keras.callbacks.EarlyStopping(
-            monitor=monitor, mode="min",
+            monitor="val_loss", mode="min",
             patience=PATIENCE, restore_best_weights=True, verbose=1,
         ),
         keras.callbacks.ReduceLROnPlateau(
             monitor="val_loss", mode="min",
             factor=0.5, patience=3, min_lr=1e-7, verbose=1,
         ),
-        keras.callbacks.CSVLogger(str(LOGS / f"baseline_{stage}.csv"), append=True),
+        keras.callbacks.CSVLogger(str(csv_path(stage)), append=True),
     ]
+
+
+def run_stage(stage, model, train_ds, val_ds, epochs, class_weights):
+    resuming = backup_dir(stage).exists()
+    prior = best_from_csv(stage) if resuming else None
+
+    if resuming:
+        print(f"  Resuming {stage} from {backup_dir(stage)}")
+        if prior:
+            print(f"  Best so far: val_loss {prior['val_loss']} (epoch {prior['best_epoch']})\n")
+    elif csv_path(stage).exists():
+        # Leftover log from an earlier attempt that never got past epoch 1;
+        # appending to it would mix runs.
+        csv_path(stage).unlink()
+
+    model.fit(
+        train_ds,
+        validation_data=val_ds,
+        epochs=epochs,
+        class_weight=class_weights,
+        callbacks=callbacks_for(stage, prior["val_loss"] if prior else None),
+        verbose=1,
+    )
+
+    model.load_weights(str(ckpt_path(stage)))
+    best = best_from_csv(stage)
+    done_marker(stage).write_text(json.dumps(best, indent=2))
+    return best
 
 
 def report_environment():
     gpus = tf.config.list_physical_devices("GPU")
     print("=" * 68)
-    print("PHASE 6.4 — BASELINE TRAINING")
+    print(f"PHASE 6.4 — BASELINE TRAINING  [tag: {TAG}]")
     print("=" * 68)
     print(f"\nTensorFlow {tf.__version__}")
     if gpus:
@@ -102,6 +236,8 @@ def report_environment():
 
 
 def main():
+    global TAG
+
     ap = argparse.ArgumentParser()
     ap.add_argument("--batch-size", type=int, default=32)
     ap.add_argument("--stage1-epochs", type=int, default=STAGE1_EPOCHS)
@@ -110,9 +246,17 @@ def main():
                     help="Stage 1 only — useful for a quick sanity run")
     ap.add_argument("--limit", type=int, default=None,
                     help="Train on N steps per epoch only (smoke test)")
+    ap.add_argument("--fresh", action="store_true",
+                    help="Delete existing 'final' artifacts and start over")
     args = ap.parse_args()
 
+    if args.limit:
+        TAG = "smoke"
+
     report_environment()
+
+    if args.fresh or args.limit:  # smoke tests always start clean
+        wipe_tagged_artifacts()
 
     train_ds, val_ds, test_ds, class_weights = build_datasets(batch_size=args.batch_size)
 
@@ -123,6 +267,7 @@ def main():
 
     MODELS.mkdir(exist_ok=True)
     LOGS.mkdir(exist_ok=True)
+    BACKUPS.mkdir(exist_ok=True)
     started = datetime.now()
 
     # ---------------- Stage 1: frozen backbone ----------------
@@ -131,23 +276,20 @@ def main():
     print("=" * 68 + "\n")
 
     model = build_baseline_model(freeze_backbone=True, learning_rate=STAGE1_LR)
-    h1 = model.fit(
-        train_ds,
-        validation_data=val_ds,
-        epochs=args.stage1_epochs,
-        class_weight=class_weights,
-        callbacks=callbacks_for("stage1"),
-        verbose=1,
-    )
+    if done_marker("stage1").exists():
+        print("  Stage 1 already complete — loading its best checkpoint.")
+        model.load_weights(str(ckpt_path("stage1")))
+        s1 = best_from_csv("stage1")
+    else:
+        s1 = run_stage("stage1", model, train_ds, val_ds, args.stage1_epochs, class_weights)
 
-    best1_loss = min(h1.history.get("val_loss", [float("inf")]))
-    best1 = max(h1.history.get("val_accuracy", [0]))
-    print(f"\nStage 1 — best val_loss {best1_loss:.4f}, best val_accuracy {best1:.4f}")
+    print(f"\nStage 1 — best val_loss {s1['val_loss']:.4f} "
+          f"(epoch {s1['best_epoch']}), val_accuracy at that epoch {s1['val_accuracy']:.4f}")
 
     # ---------------- Stage 2: fine-tune ----------------
+    s2 = None
     if args.skip_finetune:
         print("\nSkipping fine-tuning (--skip-finetune).")
-        h2 = None
     else:
         print("\n" + "=" * 68)
         print(f"STAGE 2 — fine-tuning, lr={STAGE2_LR}")
@@ -159,66 +301,65 @@ def main():
         trainable = int(sum(np.prod(w.shape) for w in model.trainable_weights))
         print(f"Trainable parameters now: {trainable:,}\n")
 
-        h2 = model.fit(
-            train_ds,
-            validation_data=val_ds,
-            epochs=args.stage2_epochs,
-            class_weight=class_weights,
-            callbacks=callbacks_for("stage2"),
-            verbose=1,
-        )
-        best2_loss = min(h2.history.get("val_loss", [float("inf")]))
-        best2 = max(h2.history.get("val_accuracy", [0]))
-        print(f"\nStage 2 — best val_loss {best2_loss:.4f}, best val_accuracy {best2:.4f}")
-        if best2_loss > best1_loss:
-            print("""
-  Fine-tuning did NOT improve val_loss over the frozen-backbone result. That happens
-  when the learning rate is too high for the pretrained weights or the
-  head hadn't converged before unfreezing. The saved stage1 checkpoint is
-  still the better model — use it, and say so in the writeup rather than
-  reporting the worse number.""")
+        if done_marker("stage2").exists():
+            print("  Stage 2 already complete — loading its best checkpoint.")
+            model.load_weights(str(ckpt_path("stage2")))
+            s2 = best_from_csv("stage2")
+        else:
+            s2 = run_stage("stage2", model, train_ds, val_ds, args.stage2_epochs, class_weights)
 
-    # The plan names models/baseline_effnet.h5, so that's the primary
-    # artifact. Also saved as .keras — the native Keras 3 format, which
-    # round-trips more reliably and is what evaluate.py loads by default.
-    final_h5 = MODELS / "baseline_effnet.h5"
-    final_keras = MODELS / "baseline_effnet.keras"
-    model.save(final_keras)
+        print(f"\nStage 2 — best val_loss {s2['val_loss']:.4f} "
+              f"(epoch {s2['best_epoch']}), val_accuracy at that epoch {s2['val_accuracy']:.4f}")
+
+    # ---------------- Pick the better stage ----------------
+    if s2 is not None and s2["val_loss"] < s1["val_loss"]:
+        chosen = "stage2"  # model already holds the stage-2 best weights
+    else:
+        chosen = "stage1"
+        if s2 is not None:
+            print("""
+  Fine-tuning did NOT improve val_loss over the frozen-backbone result. That
+  happens when the learning rate is too high for the pretrained weights or
+  the head hadn't converged before unfreezing. The stage-1 weights are being
+  saved as the final model — say so in the writeup rather than reporting the
+  worse number.""")
+        model.load_weights(str(ckpt_path("stage1")))
+
+    # The plan names models/baseline_effnet.h5, so an .h5 copy is kept.
+    # The .keras file is the native Keras 3 format and round-trips more
+    # reliably; point evaluate.py at it.
+    out_keras, out_h5 = final_keras(), final_h5()
+    model.save(out_keras)
     try:
-        model.save(final_h5)
+        model.save(out_h5)
     except Exception as e:
         print(f"\n  Could not write .h5 ({type(e).__name__}: {e})")
-        print("  The .keras file is the one that matters; evaluate.py uses it.")
-        final_h5 = None
+        print(f"  {out_keras} is the one that matters.")
+        out_h5 = None
 
     elapsed = (datetime.now() - started).total_seconds()
     summary = {
+        "tag": TAG,
         "finished": datetime.now().isoformat(timespec="seconds"),
-        "minutes": round(elapsed / 60, 1),
+        "minutes_this_session": round(elapsed / 60, 1),
         "batch_size": args.batch_size,
         "classes": SCC_CLASSES,
         "class_weights": {str(k): round(v, 4) for k, v in class_weights.items()},
         "monitored": "val_loss",
-        "stage1_best_val_loss": round(float(best1_loss), 4),
-        "stage1_best_val_accuracy": round(float(best1), 4),
-        "stage2_best_val_loss": (
-            round(float(min(h2.history.get("val_loss", [float("inf")]))), 4) if h2 else None
-        ),
-        "stage2_best_val_accuracy": (
-            round(float(max(h2.history.get("val_accuracy", [0]))), 4) if h2 else None
-        ),
-        "stage1_epochs_run": len(h1.history.get("loss", [])),
-        "stage2_epochs_run": len(h2.history.get("loss", [])) if h2 else 0,
+        "stage1": s1,
+        "stage2": s2,
+        "final_model_from": chosen,
+        "final_model": str(out_keras),
     }
-    with open(LOGS / "baseline_training_summary.json", "w") as f:
+    with open(summary_path(), "w") as f:
         json.dump(summary, f, indent=2)
 
     print("\n" + "=" * 68)
     print("TRAINING COMPLETE")
     print("=" * 68)
-    print(f"\n  Time: {elapsed/60:.1f} min")
-    print(f"  Model: {final_keras}" + (f" and {final_h5}" if final_h5 else ""))
-    print(f"  Summary: {LOGS / 'baseline_training_summary.json'}")
+    print(f"\n  Time this session: {elapsed/60:.1f} min")
+    print(f"  Final model (from {chosen}): {out_keras}" + (f" and {out_h5}" if out_h5 else ""))
+    print(f"  Summary: {summary_path()}")
     print("""
   Do NOT evaluate on the test set yet if you still intend to change
   anything — architecture, hyperparameters, augmentation. Each look at
@@ -241,13 +382,20 @@ if __name__ == "__main__":
 #     !pip install -q tensorflow
 #     !python src/baseline/train.py
 #
-# Sanity-check the wiring on a few steps before committing to a full run:
+# Sanity-check the wiring on a few steps before committing to a full run
+# (writes "smoke" files only, never "final"):
 #
 #     !python src/baseline/train.py --limit 5 --stage1-epochs 1 --skip-finetune
+#
+# If Colab disconnects, run the exact same command again — it resumes.
+# To discard a finished final run and retrain from scratch:
+#
+#     !python src/baseline/train.py --fresh
 #
 # resolved_manifest.csv stores paths relative to the repo root, so as long
 # as you %cd there first, they resolve unchanged.
 #
-# Colab disconnects after ~12h (less when idle). Checkpoints land in
-# models/ on Drive, so a dropped session loses at most the current epoch.
+# Colab disconnects after ~12h (less when idle). Checkpoints and resume
+# backups land in models/ and backups/ on Drive, so a dropped session
+# loses at most the current epoch.
 # ---------------------------------------------------------------------

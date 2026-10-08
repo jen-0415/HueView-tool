@@ -43,7 +43,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
-PROC = Path("data/processed")
+PROC = Path("ml_pipeline/data/processed")
 IMAGE_SIZE = (224, 224)
 BATCH_SIZE = 32
 NUM_CLASSES = 6
