@@ -30,7 +30,7 @@ from ..hueview.hsv_skin_filter import filter_all_regions
 from ..hueview.region_selector import RegionalConfigurationSelector, FULL_FACE
 from ..hueview.cielab_features import build_cielab_vector
 from ..hueview.regions import REGION_ORDER, REGION_DISPLAY
-from ..hueview.undertone import compute_undertone_descriptor
+from ..hueview.undertone import STW_TRAIN_CENTRE_DEG, compute_undertone_descriptor
 from ..hueview.train import cielab_mean
 from .config import HSV_CONFIG, CIELAB_FROM_ORIGINAL
 from .models import checkpoint_label, load_models
@@ -245,7 +245,10 @@ def run_hueview(
 
     if full is not None:
         vector = build_cielab_vector(full, original_rgb=original)
-        descriptor = compute_undertone_descriptor(full, vector)
+        # Same dataset-relative centre run_phase9_batch.py reports, not the
+        # manuscript's 60 deg default, so the demo matches the results tables.
+        descriptor = compute_undertone_descriptor(full, vector,
+                                                  center=STW_TRAIN_CENTRE_DEG)
 
         per_region = vector.reshape(-1, 3)
         imputed = set(full.imputed_regions)
