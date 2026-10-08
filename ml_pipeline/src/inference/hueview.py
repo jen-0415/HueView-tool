@@ -10,6 +10,10 @@ SSR patch with non-skin pixels zeroed plus a 3-D skimage CIELAB skin mean;
 full_face gets the unmasked SSR face plus the 15-D regional CIELAB vector.
 CIELAB comes from train.py's own cielab_mean(), so the values are identical.
 
+Final SCC (system architecture): majority vote of the six predictions -- the
+five regions plus full_face; a tie goes to the tied class with the highest
+mean softmax across the six.
+
 Ordering note: landmarks from the ORIGINAL crop; masking on the SSR image.
 """
 
@@ -145,32 +149,41 @@ def _predict_one(model, scaler, img_patch: np.ndarray, lab_raw: np.ndarray) -> D
     }
 
 
+def majority_vote(region_probs: np.ndarray):
+    """Final-SCC rule over the six heads' softmax vectors (shape 6 x 6: five
+    regions + full_face). Returns (class index, vote counts, tied, mean softmax)."""
+    votes = np.bincount(region_probs.argmax(axis=1), minlength=len(SCC_CLASS_ORDER))
+    mean = region_probs.mean(axis=0)
+    top = np.flatnonzero(votes == votes.max())
+    idx = int(top[np.argmax(mean[top])])     # no tie: the only candidate
+    return idx, votes, len(top) > 1, mean
+
+
 def _classify_hueview(ssr, patches, hv) -> Dict:
     models, scalers = hv["models"], hv["scalers"]
     out = {"regions": {}, "full_face": None, "headline": None}
 
-    all_probs = []
     for name in REGION_ORDER:
-        res = _predict_one(models[name], scalers[name],
-                           _img_input(name, ssr, patches),
-                           _lab_input(name, patches, scalers[name]))
-        out["regions"][name] = res
-        all_probs.append(np.array(res["probabilities"], dtype=np.float64))
+        out["regions"][name] = _predict_one(models[name], scalers[name],
+                                            _img_input(name, ssr, patches),
+                                            _lab_input(name, patches, scalers[name]))
+    out["full_face"] = _predict_one(models[FULL_FACE], scalers[FULL_FACE],
+                                    _img_input(FULL_FACE, ssr, patches),
+                                    _lab_input(FULL_FACE, patches, scalers[FULL_FACE]))
 
-    ff_res = _predict_one(models[FULL_FACE], scalers[FULL_FACE],
-                          _img_input(FULL_FACE, ssr, patches),
-                          _lab_input(FULL_FACE, patches, scalers[FULL_FACE]))
-    out["full_face"] = ff_res
-    all_probs.append(np.array(ff_res["probabilities"], dtype=np.float64))  # full_face isasama na sa headline
-
-    mean = np.mean(all_probs, axis=0)
-    order = np.sort(mean)[::-1]
-    idx = int(np.argmax(mean))
+    heads = [out["regions"][n] for n in REGION_ORDER] + [out["full_face"]]
+    probs = np.array([h["probabilities"] for h in heads], dtype=np.float64)
+    idx, votes, tied, mean = majority_vote(probs)
+    # confidence/margin: the chosen class's mean softmax over the six heads and
+    # its lead over the best other class (negative when the vote overrules the mean).
+    others = np.delete(mean, idx)
     out["headline"] = {
         "scc": SCC_CLASS_ORDER[idx],
         "probabilities": mean.tolist(),
         "confidence": float(mean[idx]),
-        "margin": float(order[0] - order[1]),
+        "margin": float(mean[idx] - others.max()),
+        "votes": {SCC_CLASS_ORDER[i]: int(v) for i, v in enumerate(votes) if v},
+        "tied": bool(tied),
     }
     return out
 
@@ -311,13 +324,10 @@ def run_hueview(
                 **cls_r,
             })
 
-    # ---- headline SCC = ensemble mean of all 6 region softmaxes ----
-    if cls:
-        head = cls["headline"]
-        scc, probabilities = head["scc"], head["probabilities"]
-        confidence, margin = head["confidence"], head["margin"]
-    else:
-        scc = probabilities = confidence = margin = None
+    # ---- headline SCC = majority vote of the 6 heads (tie: highest mean softmax) ----
+    head = cls["headline"] if cls else {}
+    scc, probabilities = head.get("scc"), head.get("probabilities")
+    confidence, margin = head.get("confidence"), head.get("margin")
 
     return {
         "name": "HueView",
@@ -328,6 +338,8 @@ def run_hueview(
         "probabilities": probabilities,
         "confidence": confidence,
         "margin": margin,
+        "votes": head.get("votes"),
+        "tied": head.get("tied"),
         "lab": face_lab,
         "regions": region_rows,
         "undertone": undertone_block,

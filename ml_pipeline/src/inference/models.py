@@ -4,7 +4,8 @@ Phase 14.2 -- Model loading (once, at startup)
 Baseline: baseline_effnet_final.h5.
 HueView: per-region weights from train.py v3 (manuscript-aligned: HSV-filtered
 skin masks, skimage CIELAB, 15-D full_face vector), "_final1" preferred,
-"_final" as the per-region fallback.
+"_final" as the per-region fallback. All six vote on the final SCC
+(inference/hueview.py).
 """
 
 from __future__ import annotations

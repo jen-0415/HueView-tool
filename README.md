@@ -148,7 +148,7 @@ Most pipeline scripts use paths like `Path("data/processed")` relative to `ml_pi
 3. MediaPipe face mesh → five regions (forehead, cheeks, nose bridge, jawline) as landmark convex hulls.
 4. HSV skin filter inside each region (`configs/hsv_skin_thresholds.json`, decided on the original crop).
 5. Six models: one per region (skin-masked SSR patch + 3-D CIELAB) and one full-face (SSR face + 15-D CIELAB).
-6. **Final SCC in the web app:** the mean of the six models' probability vectors, argmax. **Note:** `evaluate.py` reports the full-face model alone (`--primary full_face`), so the thesis metrics and the app use different final rules.
+6. **Final SCC:** majority vote of the six predictions (five regions + full face); a tie on votes goes to the tied class with the highest mean softmax across the six (`majority_vote()` in `src/inference/hueview.py`). **Note:** `evaluate.py` still reports the full-face model alone (`--primary full_face`) until it is updated to the same rule.
 7. Undertone: hue angle of each region's CIELAB mean (Warm > 65°, Neutral 55–65°, Cool < 55°), majority vote across the five regions.
 
 The Baseline is EfficientNetB0 on the crop fused with the global RGB mean; its undertone uses the normalized blue ratio (Cool > 0.285, Neutral 0.275–0.285, Warm < 0.275).

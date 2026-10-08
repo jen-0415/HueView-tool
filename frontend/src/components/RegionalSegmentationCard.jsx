@@ -3,7 +3,7 @@ import { SCC, sccLabel } from "../constants";
 
 // HueView's regional path, end to end: where each region is on the face,
 // which pixels survived the skin filter, what each of the six models saw and
-// predicted, and how those six predictions become the final SCC.
+// predicted, and how their votes become the final SCC.
 export default function RegionalSegmentationCard({ hueview }) {
   return (
     <Card>
@@ -106,14 +106,18 @@ function Figure({ n, src, caption }) {
   );
 }
 
-// Every model's probability vector, then their mean -- the final SCC is the
-// largest mean. Shown in full so the decision can be checked by eye.
+// Every model's probability vector and vote, the vote tally, and the mean
+// probability used only to break a tie. Shown in full so the decision can be
+// checked by eye.
 export function DecisionTable({ hueview }) {
   const regions = (hueview.regions ?? []).filter((r) => Array.isArray(r.probabilities));
   if (regions.length === 0) return null;
-  const final = hueview.probabilities;
+  const mean = hueview.probabilities;
+  const votes = hueview.votes ?? {};
   const pct = (p) => (p == null ? "—" : `${(p * 100).toFixed(1)}%`);
   const argmax = (ps) => ps.indexOf(Math.max(...ps));
+  const finalIdx = SCC.findIndex((s) => s.id === hueview.scc);
+  const headCls = "px-3 py-2 text-right font-normal text-[10px] tracking-widest text-accent";
 
   return (
     <div className="border-t border-line-soft">
@@ -127,10 +131,11 @@ export function DecisionTable({ hueview }) {
             <tr className="bg-blush">
               <th className="px-3 py-2 text-left font-normal text-[10px] tracking-widest text-accent">Model</th>
               {SCC.map((s) => (
-                <th key={s.id} className="px-3 py-2 text-right font-normal text-[10px] tracking-widest text-accent">
+                <th key={s.id} className={headCls}>
                   {s.id}
                 </th>
               ))}
+              <th className={headCls}>Vote</th>
             </tr>
           </thead>
           <tbody>
@@ -144,20 +149,33 @@ export function DecisionTable({ hueview }) {
                       {pct(p)}
                     </td>
                   ))}
+                  <td className="px-3 py-2 text-right font-semibold">{r.scc}</td>
                 </tr>
               );
             })}
-            {final && (
-              <tr className="border-t-2 border-accent bg-blush-soft">
-                <td className="px-3 py-2 font-semibold text-accent">Average of 6 → final</td>
-                {final.map((p, i) => (
-                  <td
-                    key={i}
-                    className={`px-3 py-2 text-right ${i === argmax(final) ? "font-semibold text-accent" : ""}`}
-                  >
+            {mean && (
+              <tr className="border-t-2 border-accent">
+                <td className="px-3 py-2 text-ink-soft">Average of {regions.length} (only used to break a tie)</td>
+                {mean.map((p, i) => (
+                  <td key={i} className="px-3 py-2 text-right text-ink-soft">
                     {pct(p)}
                   </td>
                 ))}
+                <td />
+              </tr>
+            )}
+            {hueview.votes && (
+              <tr className="border-t border-line-soft bg-blush-soft">
+                <td className="px-3 py-2 font-semibold text-accent">Votes → final</td>
+                {SCC.map((s, i) => (
+                  <td
+                    key={s.id}
+                    className={`px-3 py-2 text-right ${i === finalIdx ? "font-semibold text-accent" : ""}`}
+                  >
+                    {votes[s.id] ?? 0}
+                  </td>
+                ))}
+                <td className="px-3 py-2 text-right font-semibold text-accent">{hueview.scc}</td>
               </tr>
             )}
           </tbody>
@@ -166,7 +184,11 @@ export function DecisionTable({ hueview }) {
       {hueview.scc && (
         <p className="px-6 pb-5 text-[13px]">
           HueView&apos;s final answer: <span className="font-semibold text-accent">{hueview.scc} — {sccLabel(hueview.scc)}</span>
-          <span className="text-ink-soft"> (highest average score, {pct(hueview.confidence)})</span>
+          <span className="text-ink-soft">
+            {" "}
+            ({votes[hueview.scc] ?? "?"} of {regions.length} models picked it
+            {hueview.tied ? "; it was a tie, so the higher average score decided" : ""})
+          </span>
         </p>
       )}
     </div>

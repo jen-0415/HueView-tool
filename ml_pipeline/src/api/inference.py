@@ -155,12 +155,13 @@ def build_result(image_bytes: bytes, filename: str = "", state: Optional[Dict] =
 
     hueview = payload["models"]["hueview"]
     hueview["decision"] = {
-        "method": "mean_softmax",
+        "method": "majority_vote",
         "heads": list(REGION_ORDER) + ["full_face"],
         "description": (
             "Each of the six HueView models (five face regions and the full face) "
-            "gives a score for every skin color class. The six scores for each "
-            "class are averaged, and the class with the highest average wins."
+            "votes for the skin color class it scores highest. The class with the "
+            "most votes wins. If two classes get the same number of votes, the one "
+            "with the higher average score across the six models wins."
         ),
     }
     try:

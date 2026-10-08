@@ -78,7 +78,6 @@ export default function Results({ preview, result, ssrPreview, onReset }) {
 
 /* ---------- shared bits ---------- */
 
-const pct = (p, digits = 0) => `${(p * 100).toFixed(digits)}%`;
 const sccText = (m) => (m.scc ? `${m.scc} — ${sccLabel(m.scc)}` : "No prediction");
 
 function StageHeader({ id, title }) {
@@ -459,8 +458,10 @@ function DecisionPanel({ result }) {
       {hv.scc && (
         <Meaning>
           <p>
-            HueView&apos;s final answer is <b>{sccText(hv)}</b>, the class with the highest
-            average score across the six models ({pct(hv.confidence, 1)}).
+            HueView&apos;s final answer is <b>{sccText(hv)}</b>, the class picked by the most of
+            its six models — the five face regions and the full face
+            {hv.votes?.[hv.scc] != null ? ` (${hv.votes[hv.scc]} of 6)` : ""}
+            {hv.tied ? ". It was a tie, so the class with the higher average score won" : ""}.
           </p>
         </Meaning>
       )}
