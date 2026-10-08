@@ -581,14 +581,6 @@ function RegionPage({ page, block }) {
 
 const METRIC_LABEL = Object.fromEntries(METRICS.map((m) => [m.short, m.label]));
 
-function Decision({ reject }) {
-  return reject ? (
-    <span className="inline-block rounded-full bg-accent text-white text-[11px] px-2.5 py-0.5">Reject H₀</span>
-  ) : (
-    <span className="inline-block rounded-full bg-blush text-ink-soft text-[11px] px-2.5 py-0.5">Fail to reject</span>
-  );
-}
-
 // Compact comparison table: scores, difference, decision.
 function TestTable({ rows, aLabel, bLabel, groupLabel }) {
   return (
@@ -601,7 +593,6 @@ function TestTable({ rows, aLabel, bLabel, groupLabel }) {
             <th className={thR}>{aLabel}</th>
             <th className={thR}>{bLabel}</th>
             <th className={thR}>Difference</th>
-            <th className={th}>Decision</th>
           </tr>
         </thead>
         <tbody>
@@ -612,7 +603,6 @@ function TestTable({ rows, aLabel, bLabel, groupLabel }) {
               <td className="px-3 py-2 text-right font-mono">{pct(r.score_a)}</td>
               <td className="px-3 py-2 text-right font-mono">{pct(r.score_b)}</td>
               <td className="px-3 py-2 text-right font-mono">{signed(r.score_b - r.score_a)}</td>
-              <td className="px-3 py-2"><Decision reject={r.reject_h0} /></td>
             </tr>
           ))}
         </tbody>
@@ -621,70 +611,36 @@ function TestTable({ rows, aLabel, bLabel, groupLabel }) {
   );
 }
 
-function HypothesisCard({ code, statement, decisions }) {
+// Reject / fail-to-reject results are hidden for now; block.decisions still
+// carries them if they are shown again.
+function HypothesisCard({ code, statement }) {
   return (
     <div className="border border-line-soft rounded-xl p-4">
       <div className="font-mono text-[12px] font-semibold text-accent">{code}</div>
       <p className="text-[13px] mt-1">{statement}</p>
-      <ul className="mt-3 space-y-1.5">
-        {decisions.map((d) => (
-          <li key={d.hypothesis} className="flex items-center justify-between gap-2 text-[13px]">
-            <span>{d.hypothesis.split("—")[1]?.trim()}</span>
-            <Decision reject={d.conclusion.startsWith("Reject")} />
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
 
 function SignificancePage({ page, block }) {
-  const dec = (h) => block.decisions.filter((d) => d.hypothesis.startsWith(h));
-  // "Accuracy, Precision" for the rejected / not-rejected metrics of one hypothesis.
-  const split = (h) => {
-    const name = (d) => d.hypothesis.split("—")[1]?.trim().replace("Macro ", "");
-    const ds = dec(h);
-    return {
-      yes: ds.filter((d) => d.conclusion.startsWith("Reject")).map(name),
-      no: ds.filter((d) => !d.conclusion.startsWith("Reject")).map(name),
-    };
-  };
-  const line = (h) => {
-    const { yes, no } = split(h);
-    if (!yes.length) return "no significant difference in any metric.";
-    return `significant difference in ${yes.join(", ")}${no.length ? `; none in ${no.join(", ")}` : ""}.`;
-  };
-
-  const answer = (
-    <>
-      <p><b>Overall (H₀3):</b> {line("H03")}</p>
-      <p><b>By lighting (H₀1):</b> {line("H01")}</p>
-      <p><b>Across facial regions (H₀2):</b> {line("H02")}</p>
-    </>
-  );
-
   return (
     <Page
       page={page}
       title="Significance tests"
-      description="Whether the differences between the Baseline and HueView, and among HueView's facial regions, are statistically significant."
-      findings={answer}
+      description="The differences between the Baseline and HueView, and among HueView's facial regions, tested for statistical significance."
     >
       <div className="grid md:grid-cols-3 gap-4">
         <HypothesisCard
           code="H₀1"
           statement="No difference between the Baseline and HueView within each lighting condition."
-          decisions={dec("H01")}
         />
         <HypothesisCard
           code="H₀2"
           statement="No difference in HueView's performance among the six facial region configurations."
-          decisions={dec("H02")}
         />
         <HypothesisCard
           code="H₀3"
           statement="No difference in overall performance between the Baseline and HueView."
-          decisions={dec("H03")}
         />
       </div>
 
