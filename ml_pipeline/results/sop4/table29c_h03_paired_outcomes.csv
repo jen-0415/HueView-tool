@@ -1,0 +1,6 @@
+outcome,count
+Both Baseline and HueView Correct,2448
+"Baseline Correct, HueView Incorrect",445
+"Baseline Incorrect, HueView Correct",317
+Both Baseline and HueView Incorrect,1278
+Total Test Images in Bin,4488

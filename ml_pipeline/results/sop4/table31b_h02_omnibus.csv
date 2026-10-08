@@ -1,0 +1,5 @@
+metric,test,statistic,p_value,alpha,reject_h0
+Accuracy (omnibus),Cochran's Q,Q = 325.797,2.8332887093263955e-68,0.05,True
+Macro Precision (omnibus),Bootstrap range across 15 pairs,significant pairs = 8,,0.0033333333333333335,True
+Macro Recall (omnibus),Bootstrap range across 15 pairs,significant pairs = 6,,0.0033333333333333335,True
+Macro F1-Score (omnibus),Bootstrap range across 15 pairs,significant pairs = 8,,0.0033333333333333335,True

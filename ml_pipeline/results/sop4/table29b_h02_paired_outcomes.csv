@@ -1,0 +1,16 @@
+pair,both_correct,a_correct_b_incorrect,a_incorrect_b_correct,both_incorrect,total
+Forehead vs. Left Cheek,1543,643,837,1465,4488
+Forehead vs. Right Cheek,1494,692,789,1513,4488
+Forehead vs. Jawline,1430,756,893,1409,4488
+Forehead vs. Nose Bridge,1344,842,763,1539,4488
+Forehead vs. Full Face,1643,543,1122,1180,4488
+Left Cheek vs. Right Cheek,1626,754,657,1451,4488
+Left Cheek vs. Jawline,1551,829,772,1336,4488
+Left Cheek vs. Nose Bridge,1470,910,637,1471,4488
+Left Cheek vs. Full Face,1747,633,1018,1090,4488
+Right Cheek vs. Jawline,1532,751,791,1414,4488
+Right Cheek vs. Nose Bridge,1407,876,700,1505,4488
+Right Cheek vs. Full Face,1690,593,1075,1130,4488
+Jawline vs. Nose Bridge,1370,953,737,1428,4488
+Jawline vs. Full Face,1647,676,1118,1047,4488
+Nose Bridge vs. Full Face,1472,635,1293,1088,4488

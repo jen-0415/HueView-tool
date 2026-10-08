@@ -1,0 +1,13 @@
+hypothesis,basis,bins_rejected,conclusion
+H01 — Accuracy,McNemar's mid-p (per bin) vs. Bonferroni alpha = 0.0042,"Low, High",Reject H0
+H01 — Macro Precision,99.58% BCa CI (per bin) excludes / includes zero,Medium,Reject H0
+H01 — Macro Recall,99.58% BCa CI (per bin) excludes / includes zero,none,Fail to Reject H0
+H01 — Macro F1-Score,99.58% BCa CI (per bin) excludes / includes zero,none,Fail to Reject H0
+H02 — Accuracy,Cochran's Q vs. alpha = 0.05; post-hoc McNemar's mid-p vs. alpha = 0.0033,10 of 15 pairs,Reject H0
+H02 — Macro Precision,Pairwise 99.67% BCa CIs exclude / include zero,8 of 15 pairs,Reject H0
+H02 — Macro Recall,Pairwise 99.67% BCa CIs exclude / include zero,6 of 15 pairs,Reject H0
+H02 — Macro F1-Score,Pairwise 99.67% BCa CIs exclude / include zero,8 of 15 pairs,Reject H0
+H03 — Accuracy,McNemar's mid-p vs. Bonferroni alpha = 0.0125,full test set,Reject H0
+H03 — Macro Precision,98.75% BCa CI excludes / includes zero,full test set,Reject H0
+H03 — Macro Recall,98.75% BCa CI excludes / includes zero,full test set,Fail to Reject H0
+H03 — Macro F1-Score,98.75% BCa CI excludes / includes zero,full test set,Fail to Reject H0

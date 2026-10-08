@@ -1,0 +1,6 @@
+outcome,Low Illumination,Medium Illumination,High Illumination
+Both Baseline and HueView Correct,1181,1224,43
+"Baseline Correct, HueView Incorrect",223,194,28
+"Baseline Incorrect, HueView Correct",154,155,8
+Both Baseline and HueView Incorrect,554,669,55
+Total Test Images in Bin,2112,2242,134
