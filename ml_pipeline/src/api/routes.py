@@ -8,6 +8,7 @@ Matches what frontend/src/api.js actually calls:
                                            after the ssr stage, then "result"
     GET  /api/health                    -> service + model status
     GET  /api/config                    -> SCC labels + region names
+    GET  /api/evaluation                -> evaluation results from results/ files
 """
 
 import asyncio
@@ -29,6 +30,8 @@ from .inference import (
     build_result,
     models_loaded,
 )
+
+from .evaluation import build_evaluation
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api")
@@ -178,3 +181,13 @@ async def health():
 async def config():
     """Per 15.4 -- lets the frontend avoid hardcoding label/region lists."""
     return {"scc_labels": SCC_LABELS, "regions": REGION_NAMES, "stages": STAGE_KEYS}
+
+
+@router.get("/evaluation")
+async def evaluation():
+    """Evaluation Results tab: the saved evaluation result files."""
+    try:
+        return build_evaluation()
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404,
+                            detail={"code": "results_missing", "message": str(e)})

@@ -226,3 +226,23 @@ function mockAnalyze(onStage, onResult) {
     cancelled = true;
   };
 }
+/* ----------------------------------------------------------------
+   3. Evaluation results (lighting, regions, significance tests)
+
+   Read from the evaluation result files on the backend, so this always
+   hits the network -- there is no mock version of thesis results.
+   ---------------------------------------------------------------- */
+
+export async function getEvaluation() {
+  const res = await fetch(`${BASE}/api/evaluation`);
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+
+    throw new Error(
+      err?.detail?.message || "Could not load the evaluation results."
+    );
+  }
+
+  return res.json();
+}
