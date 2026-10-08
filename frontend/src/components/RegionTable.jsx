@@ -11,7 +11,7 @@ export default function RegionTable({ regions }) {
       <table className="w-full font-mono text-xs">
         <thead>
           <tr className="bg-blush">
-            {["Area", "L*", "a*", "b*", "Skin pixels", "Used"].map((h) => (
+            {["Area", "L*", "a*", "b*", "Skin pixels"].map((h) => (
               <th
                 key={h}
                 className="px-5 py-3 text-left font-normal tracking-widest text-[10px] text-accent"
@@ -23,8 +23,8 @@ export default function RegionTable({ regions }) {
         </thead>
         <tbody>
           {regions.map((r) => {
-            // Full Face is not a sixth skin area: its colour is the five areas'
-            // average, so the backend marks it used: false. It is not excluded.
+            // Areas with too little skin are dimmed. Full Face is the five areas'
+            // average, so the backend marks it used: false; it is not dimmed.
             const whole = r.region_key === "full_face";
             return (
             <tr
@@ -36,9 +36,6 @@ export default function RegionTable({ regions }) {
               <td className="px-5 py-3">{r.a ?? "—"}</td>
               <td className="px-5 py-3">{r.b ?? "—"}</td>
               <td className="px-5 py-3">{r.pixels.toLocaleString()}</td>
-              <td className={`px-5 py-3 ${r.used || whole ? "text-ok" : "text-ink-soft"}`}>
-                {whole ? "average" : r.used ? "yes" : "excluded"}
-              </td>
             </tr>
             );
           })}

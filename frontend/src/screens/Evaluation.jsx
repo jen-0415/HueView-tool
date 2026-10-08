@@ -17,6 +17,7 @@ const METRICS = [
 ];
 
 const pct = (v, d = 1) => (v == null ? "—" : `${(v * 100).toFixed(d)}%`);
+const signed = (v) => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v * 100).toFixed(2)} pts`);
 
 // Pages, in the order the study reports them.
 const PAGES = [
@@ -25,6 +26,7 @@ const PAGES = [
   // Not a numbered page: it summarises 01 and 02 side by side.
   { id: "compare", n: "⇄", group: "Lighting conditions", label: "Lighting Conditions Summary", extra: true },
   { id: "regions", n: "03", group: "Facial regions", label: "HueView by region" },
+  { id: "tests", n: "04", group: "Comparison", label: "Significance tests" },
 ];
 
 export default function Evaluation() {
@@ -81,6 +83,7 @@ export default function Evaluation() {
           <ComparePage page={PAGES[2]} baseline={data.baseline_lighting} hueview={data.hueview_lighting} />
         )}
         {page === "regions" && <RegionPage page={PAGES[3]} block={data.regions} />}
+        {page === "tests" && <SignificancePage page={PAGES[4]} block={data.significance} />}
 
         <div className="flex justify-between gap-3 flex-wrap border-t border-line pt-4">
           <div>
@@ -570,6 +573,147 @@ function RegionPage({ page, block }) {
       <More title="Per-class results">
         <PerClassTable rows={block.perclass} groupKey="Region" />
       </More>
+    </Page>
+  );
+}
+
+/* ------------------------------------------------------ significance page */
+
+const METRIC_LABEL = Object.fromEntries(METRICS.map((m) => [m.short, m.label]));
+
+function Decision({ reject }) {
+  return reject ? (
+    <span className="inline-block rounded-full bg-accent text-white text-[11px] px-2.5 py-0.5">Reject H₀</span>
+  ) : (
+    <span className="inline-block rounded-full bg-blush text-ink-soft text-[11px] px-2.5 py-0.5">Fail to reject</span>
+  );
+}
+
+// Compact comparison table: scores, difference, decision.
+function TestTable({ rows, aLabel, bLabel, groupLabel }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-blush">
+            {groupLabel && <th className={th}>{groupLabel}</th>}
+            <th className={th}>Metric</th>
+            <th className={thR}>{aLabel}</th>
+            <th className={thR}>{bLabel}</th>
+            <th className={thR}>Difference</th>
+            <th className={th}>Decision</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={`${r.stratum}-${r.a}-${r.b}-${r.metric}`} className="border-t border-line-soft">
+              {groupLabel && <td className="px-3 py-2">{r.group}</td>}
+              <td className="px-3 py-2">{METRIC_LABEL[r.metric] ?? r.metric}</td>
+              <td className="px-3 py-2 text-right font-mono">{pct(r.score_a)}</td>
+              <td className="px-3 py-2 text-right font-mono">{pct(r.score_b)}</td>
+              <td className="px-3 py-2 text-right font-mono">{signed(r.score_b - r.score_a)}</td>
+              <td className="px-3 py-2"><Decision reject={r.reject_h0} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function HypothesisCard({ code, statement, decisions }) {
+  return (
+    <div className="border border-line-soft rounded-xl p-4">
+      <div className="font-mono text-[12px] font-semibold text-accent">{code}</div>
+      <p className="text-[13px] mt-1">{statement}</p>
+      <ul className="mt-3 space-y-1.5">
+        {decisions.map((d) => (
+          <li key={d.hypothesis} className="flex items-center justify-between gap-2 text-[13px]">
+            <span>{d.hypothesis.split("—")[1]?.trim()}</span>
+            <Decision reject={d.conclusion.startsWith("Reject")} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function SignificancePage({ page, block }) {
+  const dec = (h) => block.decisions.filter((d) => d.hypothesis.startsWith(h));
+  // "Accuracy, Precision" for the rejected / not-rejected metrics of one hypothesis.
+  const split = (h) => {
+    const name = (d) => d.hypothesis.split("—")[1]?.trim().replace("Macro ", "");
+    const ds = dec(h);
+    return {
+      yes: ds.filter((d) => d.conclusion.startsWith("Reject")).map(name),
+      no: ds.filter((d) => !d.conclusion.startsWith("Reject")).map(name),
+    };
+  };
+  const line = (h) => {
+    const { yes, no } = split(h);
+    if (!yes.length) return "no significant difference in any metric.";
+    return `significant difference in ${yes.join(", ")}${no.length ? `; none in ${no.join(", ")}` : ""}.`;
+  };
+
+  const answer = (
+    <>
+      <p><b>Overall (H₀3):</b> {line("H03")}</p>
+      <p><b>By lighting (H₀1):</b> {line("H01")}</p>
+      <p><b>Across facial regions (H₀2):</b> {line("H02")}</p>
+    </>
+  );
+
+  return (
+    <Page
+      page={page}
+      title="Significance tests"
+      description="Whether the differences between the Baseline and HueView, and among HueView's facial regions, are statistically significant."
+      findings={answer}
+    >
+      <div className="grid md:grid-cols-3 gap-4">
+        <HypothesisCard
+          code="H₀1"
+          statement="No difference between the Baseline and HueView within each lighting condition."
+          decisions={dec("H01")}
+        />
+        <HypothesisCard
+          code="H₀2"
+          statement="No difference in HueView's performance among the six facial region configurations."
+          decisions={dec("H02")}
+        />
+        <HypothesisCard
+          code="H₀3"
+          statement="No difference in overall performance between the Baseline and HueView."
+          decisions={dec("H03")}
+        />
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <SubHead note="Full test set. Difference = HueView − Baseline.">Baseline vs HueView</SubHead>
+        <TestTable rows={block.h03} aLabel="Baseline" bLabel="HueView" />
+      </div>
+
+      <More title="By lighting condition">
+        <TestTable
+          rows={block.h01.map((r) => ({ ...r, group: r.stratum }))}
+          aLabel="Baseline"
+          bLabel="HueView"
+          groupLabel="Lighting"
+        />
+      </More>
+      <More title="Region pairs">
+        <TestTable
+          rows={block.h02_pairwise.map((r) => ({ ...r, group: `${r.a} vs ${r.b}` }))}
+          aLabel="Region A"
+          bLabel="Region B"
+          groupLabel="Pair"
+        />
+      </More>
+
+      <p className="text-[12px] text-ink-soft">
+        Accuracy: McNemar&apos;s test (mid-p). Precision, recall and F1: paired bootstrap with BCa
+        intervals. Bonferroni-adjusted α per hypothesis.
+      </p>
     </Page>
   );
 }
