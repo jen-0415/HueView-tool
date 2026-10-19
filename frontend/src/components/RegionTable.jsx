@@ -4,6 +4,7 @@ import Card from "./Card";
 export default function RegionTable({ regions }) {
   return (
     <Card>
+      {/* Table of skin-color measurements for all five regions and Full Face. */}
       <div className="px-6 py-4 border-b border-line-soft font-semibold">
         Color by face area (HueView only)
       </div>
@@ -11,7 +12,7 @@ export default function RegionTable({ regions }) {
       <table className="w-full font-mono text-xs">
         <thead>
           <tr className="bg-blush">
-            {["Area", "L*", "a*", "b*", "Skin pixels"].map((h) => (
+            {["Area", "Lightness (L*)", "Redness (a*)", "Yellowness (b*)", "Skin pixels"].map((h) => (
               <th
                 key={h}
                 className="px-5 py-3 text-left font-normal tracking-widest text-[10px] text-accent"
