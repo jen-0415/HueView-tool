@@ -71,7 +71,7 @@ def _load_hueview():
     try:
         import joblib
     except ImportError:
-        logger.warning("joblib not installed -- HueView placeholder mode. pip install scikit-learn")
+        logger.warning("joblib not installed -- ChroLumi placeholder mode. pip install scikit-learn")
         return None
 
     models, scalers, chosen, missing = {}, {}, {}, []
@@ -83,13 +83,13 @@ def _load_hueview():
                 models[region] = keras.models.load_model(mpath, compile=False)
                 scalers[region] = joblib.load(spath)
                 chosen[region] = suffix
-                logger.info("HueView %-12s <- %s + %s", region, mpath.name, spath.name)
+                logger.info("ChroLumi %-12s <- %s + %s", region, mpath.name, spath.name)
                 break
         else:
             missing.append(region)
 
     if missing:
-        logger.warning("HueView placeholder mode -- no model+scaler pair for %s (tried suffixes %s)",
+        logger.warning("ChroLumi placeholder mode -- no model+scaler pair for %s (tried suffixes %s)",
                        ", ".join(missing), ", ".join(HUEVIEW_SUFFIXES))
         return None
 

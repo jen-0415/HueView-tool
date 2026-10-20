@@ -4,8 +4,8 @@ export default function Header({ tab, onTab }) {
   return (
     <header className="bg-blush-soft border-b border-line px-4 sm:px-8 py-4 flex items-center gap-x-6 gap-y-3 flex-wrap">
       <div>
-        <span className="font-display italic text-2xl text-ink">Hue</span>
-        <span className="font-display text-2xl text-accent">View</span>
+        <span className="font-display italic text-2xl text-ink">Chro</span>
+        <span className="font-display text-2xl text-accent">Lumi</span>
       </div>
       {onTab && (
         <nav className="flex flex-1 items-center gap-1" aria-label="Sections">

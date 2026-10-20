@@ -1,4 +1,4 @@
-# HueView
+# ChroLumi
 
 A hybrid CNN and Single-Scale Retinex approach with CIELAB regional facial analysis for skin tone and undertone classification.
 
@@ -8,8 +8,8 @@ Aldover, J. · Dela Cruz, C. · Flororita, E. · Lumabi, J.
 
 The repository holds two applications:
 
-- **`ml_pipeline/`** — the Python side: dataset preprocessing, the Baseline and HueView models, evaluation, the single-image inference pipeline, and the FastAPI service.
-- **`frontend/`** — a React + Vite web app that uploads a face photo to the API and shows the Baseline-vs-HueView comparison.
+- **`ml_pipeline/`** — the Python side: dataset preprocessing, the Baseline and ChroLumi models, evaluation, the single-image inference pipeline, and the FastAPI service.
+- **`frontend/`** — a React + Vite web app that uploads a face photo to the API and shows the Baseline-vs-ChroLumi comparison.
 
 ---
 
@@ -46,7 +46,7 @@ HueView-tool/
     │   ├── hsv_skin_thresholds.json    # Phase 7.4 HSV skin filter
     │   ├── illumination_thresholds.json# Phase 3 k-means boundaries
     │   ├── scc_labels.json             # SCC-1..6 display names
-    │   └── train_config.json           # HueView training hyperparameters
+    │   └── train_config.json           # ChroLumi training hyperparameters
     ├── data/processed/           # split CSVs and metadata (committed); images gitignored
     ├── models/                   # local only (gitignored): trained weights
     ├── results/                  # evaluation outputs, training logs, confusion matrices
@@ -93,7 +93,7 @@ Weights are gitignored and shared via Google Drive. Place them in `ml_pipeline/m
 
 All six configurations load `_final1`, regional and full_face alike. The tag is pinned with no fallback: if a file is missing the API starts in placeholder mode and logs which configuration, rather than quietly serving a different set of weights. Run `evaluate.py --run-tag final1` so the thesis tables and the app report the same predictions — `results/model_provenance.csv` records the tag the last evaluation actually scored. The UI's "ckpt" field shows which files were loaded.
 
-`src/hueview/evaluate.py` loads `baseline_effnet.h5` and takes the HueView tag from `--run-tag` (default `final`). If a model's files are missing, the API still starts and returns that model in placeholder mode (no SCC).
+`src/hueview/evaluate.py` loads `baseline_effnet.h5` and takes the ChroLumi tag from `--run-tag` (default `final`). If a model's files are missing, the API still starts and returns that model in placeholder mode (no SCC).
 
 ---
 
@@ -141,7 +141,7 @@ Most pipeline scripts use paths like `Path("data/processed")` relative to `ml_pi
 
 ---
 
-## How HueView classifies an image
+## How ChroLumi classifies an image
 
 1. MTCNN crop to 224 × 224 (same settings as Phase 2).
 2. SSR illumination normalization (`src/hueview/ssr_normalization.py`, σ = 50; `images_ssr/` and the current models were made with an earlier SSR).
@@ -155,7 +155,7 @@ The Baseline is EfficientNetB0 on the crop fused with the global RGB mean; its u
 
 ### Known open issues
 
-- The HueView weights were trained on SSR images from the previous `apply_ssr()` (`data/processed/images_ssr/`); inference uses the current one. Retrain or revert before trusting HueView's numbers.
+- The ChroLumi weights were trained on SSR images from the previous `apply_ssr()` (`data/processed/images_ssr/`); inference uses the current one. Retrain or revert before trusting ChroLumi's numbers.
 - The undertone's CIELAB comes from the original crop in the app and `run_phase9_batch.py`, but from the SSR patches in `evaluate.py`.
 - The HSV filter does not reliably remove eyebrows or bangs from the forehead region.
 
@@ -182,7 +182,7 @@ This was verified empirically: each manifest row stores the `mean_y` of the imag
 | Split set | train / val / test | Used by |
 |---|---|---|
 | `train.csv` / `val.csv` / `test.csv` (= `baseline_rgb_*.csv`) | 30,074 / 8,618 / 4,529 | Baseline (frozen Phase 5 split — do not regenerate) |
-| `*_hueview_usable.csv` | 29,912 / 8,584 / 4,488 | HueView training and evaluation |
+| `*_hueview_usable.csv` | 29,912 / 8,584 / 4,488 | ChroLumi training and evaluation |
 | `*_verified.csv` | 19,610 / 5,634 / 2,994 | older scripts only (`verify_phase10.py`) |
 
 `src/baseline/check_dataset.py` confirms no image appears in more than one of train/val/test.

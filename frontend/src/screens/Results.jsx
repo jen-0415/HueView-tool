@@ -170,7 +170,7 @@ function SummaryPanel({ result, pick }) {
           <span className="text-sm text-ink-soft">
             {agree
               ? `Both classified this face as ${sccText(baseline)}.`
-              : `Baseline read this face as ${sccText(baseline)}; HueView read it as ${sccText(hueview)}.`}
+              : `Baseline read this face as ${sccText(baseline)}; ChroLumi read it as ${sccText(hueview)}.`}
           </span>
         </div>
       ) : (
@@ -197,7 +197,7 @@ function SummaryPanel({ result, pick }) {
       <Meaning>
         <p>
           The Baseline looks at the whole original photo, including hair, background and
-          shadows. HueView fixes the lighting first, then looks only at skin in separate
+          shadows. ChroLumi fixes the lighting first, then looks only at skin in separate
           parts of the face. Because they look at different things, they can give different
           answers.
         </p>
@@ -332,7 +332,7 @@ function SsrPanel({ ssrPreview }) {
       )}
       <Meaning>
         <p>
-          HueView reads skin color from the corrected face (the last image, outlined), so a
+          ChroLumi reads skin color from the corrected face (the last image, outlined), so a
           shadow on one cheek is less likely to be mistaken for darker skin. The Baseline uses
           the original photo.
         </p>
@@ -362,7 +362,7 @@ function SegmentationPanel({ result }) {
       )}
       <Meaning>
         <p>
-          Skin color isn&apos;t the same all over the face. HueView reads each area separately
+          Skin color isn&apos;t the same all over the face. ChroLumi reads each area separately
           instead of taking one average, so a single shadowed or covered area can&apos;t decide
           the result on its own.
         </p>
@@ -466,7 +466,7 @@ function DecisionPanel({ result }) {
       {hv.scc && (
         <Meaning>
           <p>
-            HueView&apos;s final answer is <b>{sccText(hv)}</b>, the class picked by the most of
+            ChroLumi&apos;s final answer is <b>{sccText(hv)}</b>, the class picked by the most of
             its six models — the five face regions and the full face
             {hv.votes?.[hv.scc] != null ? ` (${hv.votes[hv.scc]} of 6)` : ""}
             {hv.tied ? ". It was a tie, so the class with the higher average score won" : ""}.
@@ -494,12 +494,12 @@ function ComparePanel({ result }) {
 
   return (
     <>
-      <StageHeader id="compare" title="Baseline vs HueView" />
+      <StageHeader id="compare" title="Baseline vs ChroLumi" />
       <Card className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-blush">
-              {["For this photo", "Baseline", "HueView"].map((h) => (
+              {["For this photo", "Baseline", "ChroLumi"].map((h) => (
                 <th
                   key={h}
                   className="px-5 py-3 text-left font-mono text-[10px] tracking-widest uppercase text-accent font-normal"
@@ -530,7 +530,7 @@ function ComparePanel({ result }) {
           </tbody>
         </table>
         <p className="px-5 py-3 border-t border-line-soft text-[11px] italic text-ink-soft">
-          How undertone is found: the Baseline uses how much blue is in the average color; HueView
+          How undertone is found: the Baseline uses how much blue is in the average color; ChroLumi
           uses the color direction (hue) of each face area.
         </p>
       </Card>

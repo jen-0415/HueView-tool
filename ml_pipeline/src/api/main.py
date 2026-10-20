@@ -38,16 +38,16 @@ async def lifespan(app: FastAPI):
     else:
         log.warning("Baseline weights missing -- /api/analyze will return placeholder SCC for baseline.")
     if status["hueview"]:
-        log.info("HueView model loaded and ready.")
+        log.info("ChroLumi model loaded and ready.")
     else:
-        log.warning("HueView weights missing -- /api/analyze will return placeholder SCC for HueView.")
+        log.warning("ChroLumi weights missing -- /api/analyze will return placeholder SCC for ChroLumi.")
     yield
-    log.info("Shutting down HueView API")
+    log.info("Shutting down ChroLumi API")
 
 
 app = FastAPI(
-    title="HueView API",
-    description="Dual-pipeline skin tone classification: Baseline vs. HueView",
+    title="ChroLumi API",
+    description="Dual-pipeline skin tone classification: Baseline vs. ChroLumi",
     version="0.1.0",
     lifespan=lifespan,
 )
@@ -66,4 +66,4 @@ app.include_router(router)
 
 @app.get("/")
 async def root():
-    return {"service": "HueView API", "docs": "/docs", "health": "/api/health"}
+    return {"service": "ChroLumi API", "docs": "/docs", "health": "/api/health"}

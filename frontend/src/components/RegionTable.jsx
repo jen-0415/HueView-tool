@@ -5,7 +5,7 @@ export default function RegionTable({ regions }) {
   return (
     <Card>
       <div className="px-6 py-4 border-b border-line-soft font-semibold">
-        Color by face area (HueView only)
+        Color by face area (ChroLumi only)
       </div>
 
       <table className="w-full font-mono text-xs">

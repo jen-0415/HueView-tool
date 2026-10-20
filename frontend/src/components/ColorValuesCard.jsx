@@ -3,7 +3,7 @@ import RgbBars from "./RgbBars";
 import LabBars from "./LabBars";
 
 // Color values live here, not inside the model cards. Each pipeline shows the
-// space it actually works in: the baseline averages RGB, HueView converts the
+// space it actually works in: the baseline averages RGB, ChroLumi converts the
 // selected regions to CIELAB.
 export default function ColorValuesCard({ baseline, hueview }) {
     return (
@@ -26,7 +26,7 @@ export default function ColorValuesCard({ baseline, hueview }) {
 
                 <div className="px-6 py-5">
                     <div className="font-mono text-[10px] tracking-widest text-accent mb-1">
-                        HUEVIEW — CIELAB
+                        CHROLUMI — CIELAB
                     </div>
                     <div className="text-[12px] text-ink-soft mb-4">
                         Average across the face areas used

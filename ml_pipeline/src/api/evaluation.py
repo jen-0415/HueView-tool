@@ -1,6 +1,6 @@
 """
-GET /api/evaluation -- the evaluation results (baseline and HueView by
-lighting, HueView by facial region, significance tests), read from the result
+GET /api/evaluation -- the evaluation results (baseline and ChroLumi by
+lighting, ChroLumi by facial region, significance tests), read from the result
 files the evaluation scripts write. Nothing is recomputed here, so the tab shows exactly the numbers that go into Chapter 4:
 
     results/classification_results_record.csv   evaluate.py       (per image)
@@ -68,7 +68,7 @@ def build_evaluation() -> dict:
 
     warnings = []
     if "hv_final" not in record_cols:
-        warnings.append("These results use the Full Face model alone as HueView's result, "
+        warnings.append("These results use the Full Face model alone as ChroLumi's result, "
                         "not the manuscript's majority vote of all six configurations. "
                         "Re-run evaluate.py, appendix_tables.py and significance.py.")
     if t_app < t_rec:

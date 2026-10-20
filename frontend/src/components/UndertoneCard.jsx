@@ -4,7 +4,7 @@ import { UNDERTONE_RULES } from "../constants";
 
 // The two pipelines use DIFFERENT undertone rules, not one rule on two inputs:
 //   Baseline — normalized RGB ratios, thresholded on the b ratio.
-//   HueView  — hue angle on the regional CIELAB means.
+//   ChroLumi  — hue angle on the regional CIELAB means.
 // Each side names its own rule so the comparison is not read as like-for-like.
 export default function UndertoneCard({ baseline, hueview }) {
     const agree = baseline.undertone.label === hueview.undertone.label;
@@ -82,7 +82,7 @@ function Side({ model, primary }) {
                 </div>
             )}
 
-            {/* HueView: the spread across the selected regions. */}
+            {/* ChroLumi: the spread across the selected regions. */}
             {u.method === "hue_angle" && (
                 <div className="mt-4">
                     <div className="font-mono text-[10px] tracking-widest text-ink-soft mb-2">

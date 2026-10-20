@@ -214,7 +214,7 @@ def run_hueview(
     if landmarks is None:
         raise NoFaceDetected(
             "MTCNN found a face but MediaPipe could not place landmarks on it. "
-            "Regional analysis needs the mesh, so HueView can't run on this image."
+            "Regional analysis needs the mesh, so ChroLumi can't run on this image."
         )
 
     masks = build_region_masks(landmarks, ssr.shape)
@@ -235,7 +235,7 @@ def run_hueview(
     if empty:
         names = ", ".join(REGION_DISPLAY[n] for n in empty)
         raise NoFaceDetected(
-            f"No skin could be found in: {names}. HueView needs all five face "
+            f"No skin could be found in: {names}. ChroLumi needs all five face "
             f"regions, so it can't analyze this image. Try a front-facing photo "
             f"with the forehead, cheeks, nose and jawline uncovered."
         )
@@ -353,7 +353,7 @@ def run_hueview(
     confidence, margin = head.get("confidence"), head.get("margin")
 
     return {
-        "name": "HueView",
+        "name": "ChroLumi",
         "method": "SSR + regional segmentation",
         "checkpoint": checkpoint_label("hueview"),
         "placeholder": is_placeholder,

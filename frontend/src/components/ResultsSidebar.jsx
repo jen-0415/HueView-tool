@@ -37,7 +37,7 @@ export default function ResultsSidebar({ stage, onPick, preview, onReset }) {
           className="min-h-[48px] rounded-xl border border-line bg-white px-3 text-[15px] font-semibold"
         >
           <option value="summary">Summary</option>
-          <optgroup label="HueView pipeline">
+          <optgroup label="ChroLumi pipeline">
             {STEPS.map((s) => (
               <option key={s.id} value={s.id}>
                 {s.n} {s.label}
@@ -45,7 +45,7 @@ export default function ResultsSidebar({ stage, onPick, preview, onReset }) {
             ))}
           </optgroup>
           <optgroup label="Compare">
-            <option value="compare">Baseline vs HueView</option>
+            <option value="compare">Baseline vs ChroLumi</option>
           </optgroup>
         </select>
         <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${STEPS.length}, minmax(0,1fr))` }}>
@@ -61,7 +61,7 @@ export default function ResultsSidebar({ stage, onPick, preview, onReset }) {
           Summary
         </NavButton>
 
-        <GroupLabel>HueView pipeline</GroupLabel>
+        <GroupLabel>ChroLumi pipeline</GroupLabel>
         {STEPS.map((s) => (
           <NavButton key={s.id} active={stage === s.id} onClick={() => onPick(s.id)} mark={s.n}>
             {s.label}
@@ -70,7 +70,7 @@ export default function ResultsSidebar({ stage, onPick, preview, onReset }) {
 
         <GroupLabel>Compare</GroupLabel>
         <NavButton active={stage === "compare"} onClick={() => onPick("compare")} mark="⇄">
-          Baseline vs HueView
+          Baseline vs ChroLumi
         </NavButton>
       </Card>
 

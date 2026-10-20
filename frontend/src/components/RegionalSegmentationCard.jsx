@@ -1,14 +1,14 @@
 import Card from "./Card";
 import { SCC, sccLabel } from "../constants";
 
-// HueView's regional path, end to end: where each region is on the face,
+// ChroLumi's regional path, end to end: where each region is on the face,
 // which pixels survived the skin filter, what each of the six models saw and
 // predicted, and how their votes become the final SCC.
 export default function RegionalSegmentationCard({ hueview }) {
   return (
     <Card>
       <div className="px-6 py-4 border-b border-line-soft">
-        <div className="font-semibold">Regional segmentation &amp; per-region SCC — HueView</div>
+        <div className="font-semibold">Regional segmentation &amp; per-region SCC — ChroLumi</div>
         <div className="text-xs text-ink-soft">
           MediaPipe landmarks → convex-hull regions → HSV skin filter → one model per region.
         </div>
@@ -183,7 +183,7 @@ export function DecisionTable({ hueview }) {
       </div>
       {hueview.scc && (
         <p className="px-6 pb-5 text-[13px]">
-          HueView&apos;s final answer: <span className="font-semibold text-accent">{hueview.scc} — {sccLabel(hueview.scc)}</span>
+          ChroLumi&apos;s final answer: <span className="font-semibold text-accent">{hueview.scc} — {sccLabel(hueview.scc)}</span>
           <span className="text-ink-soft">
             {" "}
             ({votes[hueview.scc] ?? "?"} of {regions.length} models picked it

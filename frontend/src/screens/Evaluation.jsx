@@ -3,7 +3,7 @@ import Card from "../components/Card";
 import { useEvaluation } from "../useEvaluation";
 
 // Evaluation results from the saved result files (GET /api/evaluation): the
-// Baseline and HueView under each lighting level, and HueView per facial
+// Baseline and ChroLumi under each lighting level, and ChroLumi per facial
 // region. Numbers are never computed here -- this screen only lays out what
 // evaluate.py and appendix_tables.py wrote, so it always matches the tables in
 // Chapter 4 and the appendices.
@@ -22,10 +22,10 @@ const signed = (v) => (v == null ? "—" : `${v >= 0 ? "+" : "−"}${Math.abs(v 
 // Pages, in the order the study reports them.
 const PAGES = [
   { id: "baseline", n: "01", group: "Lighting conditions", label: "Baseline (global RGB)" },
-  { id: "hueview", n: "02", group: "Lighting conditions", label: "HueView" },
+  { id: "hueview", n: "02", group: "Lighting conditions", label: "ChroLumi" },
   // Not a numbered page: it summarises 01 and 02 side by side.
   { id: "compare", n: "⇄", group: "Lighting conditions", label: "Lighting Conditions Summary", extra: true },
-  { id: "regions", n: "03", group: "Facial regions", label: "HueView by region" },
+  { id: "regions", n: "03", group: "Facial regions", label: "ChroLumi by region" },
   { id: "tests", n: "04", group: "Comparison", label: "Significance tests" },
 ];
 
@@ -73,9 +73,9 @@ export default function Evaluation() {
         {page === "hueview" && (
           <LightingPage
             page={PAGES[1]}
-            title="HueView under different lighting"
-            description="Skin tone classification by HueView (EfficientNetB0 with Single-Scale Retinex, regional facial analysis and CIELAB; final result, the majority vote of its six configurations) on the same test images and lighting groups."
-            model="HueView"
+            title="ChroLumi under different lighting"
+            description="Skin tone classification by ChroLumi (EfficientNetB0 with Single-Scale Retinex, regional facial analysis and CIELAB; final result, the majority vote of its six configurations) on the same test images and lighting groups."
+            model="ChroLumi"
             block={data.hueview_lighting}
           />
         )}
@@ -394,8 +394,8 @@ function LightingPage({ page, title, description, model, block }) {
 
 const signedPts = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v * 100).toFixed(1)} pts`;
 
-// Baseline and HueView next to each other in every illumination bin, from the
-// same Table 19 rows the two lighting pages show. Difference = HueView − Baseline;
+// Baseline and ChroLumi next to each other in every illumination bin, from the
+// same Table 19 rows the two lighting pages show. Difference = ChroLumi − Baseline;
 // it is descriptive only (significance is tested in significance.py).
 function ComparePage({ page, baseline, hueview }) {
   const bins = baseline.metrics.map((r) => r.Illumination);
@@ -404,7 +404,7 @@ function ComparePage({ page, baseline, hueview }) {
     .filter((b) => hvBy[b.Illumination])
     .map((b) => ({ bin: b.Illumination, n: b.n, b, h: hvBy[b.Illumination] }));
 
-  // Lead with where HueView is strongest relative to the Baseline; every number
+  // Lead with where ChroLumi is strongest relative to the Baseline; every number
   // is still in the table below.
   const gap = (p, key) => p.h[key] - p.b[key];
   const bestF1 = [...pairs].sort((x, z) => gap(z, "Macro F1-Score") - gap(x, "Macro F1-Score"))[0];
@@ -417,12 +417,12 @@ function ComparePage({ page, baseline, hueview }) {
         The two models show different strengths across lighting conditions.{" "}
         {ahead(bestF1, "Macro F1-Score") ? (
           <>
-            Under <b>{bestF1.bin.toLowerCase()}</b> lighting, HueView reaches a higher macro F1 (
+            Under <b>{bestF1.bin.toLowerCase()}</b> lighting, ChroLumi reaches a higher macro F1 (
             {pct(bestF1.h["Macro F1-Score"])} vs {pct(bestF1.b["Macro F1-Score"])})
           </>
         ) : (
           <>
-            HueView&apos;s macro F1 is closest to the Baseline&apos;s under{" "}
+            ChroLumi&apos;s macro F1 is closest to the Baseline&apos;s under{" "}
             <b>{bestF1.bin.toLowerCase()}</b> lighting ({pct(bestF1.h["Macro F1-Score"])} vs{" "}
             {pct(bestF1.b["Macro F1-Score"])})
           </>
@@ -447,7 +447,7 @@ function ComparePage({ page, baseline, hueview }) {
     <Page
       page={page}
       title="Lighting Conditions Summary"
-      description="The Baseline (01) and HueView (02) side by side on the same test images in each lighting group. The difference column is HueView minus the Baseline, in percentage points."
+      description="The Baseline (01) and ChroLumi (02) side by side on the same test images in each lighting group. The difference column is ChroLumi minus the Baseline, in percentage points."
       findings={answer}
     >
       <div className="flex flex-col gap-2">
@@ -461,7 +461,7 @@ function ComparePage({ page, baseline, hueview }) {
                 <th className={th}>Illumination</th>
                 <th className={th}>Metric</th>
                 <th className={thR}>Baseline</th>
-                <th className={thR}>HueView</th>
+                <th className={thR}>ChroLumi</th>
                 <th className={thR}>Difference</th>
               </tr>
             </thead>
@@ -513,7 +513,7 @@ function ComparePage({ page, baseline, hueview }) {
                 <Confusion title={`Baseline · ${bin} illumination`} matrix={baseline.confusion[bin]} />
               )}
               {hueview.confusion[bin] && (
-                <Confusion title={`HueView · ${bin} illumination`} matrix={hueview.confusion[bin]} />
+                <Confusion title={`ChroLumi · ${bin} illumination`} matrix={hueview.confusion[bin]} />
               )}
             </div>
           ))}
@@ -552,8 +552,8 @@ function RegionPage({ page, block }) {
   return (
     <Page
       page={page}
-      title="HueView by facial region"
-      description="HueView classifying from each facial region on its own (forehead, left cheek, right cheek, jawline, nose bridge) and from the Full Face, a separately trained classifier that sees the whole normalized face. All six vote on the final result."
+      title="ChroLumi by facial region"
+      description="ChroLumi classifying from each facial region on its own (forehead, left cheek, right cheek, jawline, nose bridge) and from the Full Face, a separately trained classifier that sees the whole normalized face. All six vote on the final result."
       findings={answer}
     >
       <div className="flex flex-col gap-2">
@@ -627,33 +627,33 @@ function SignificancePage({ page, block }) {
     <Page
       page={page}
       title="Significance tests"
-      description="The differences between the Baseline and HueView, and among HueView's facial regions, tested for statistical significance."
+      description="The differences between the Baseline and ChroLumi, and among ChroLumi's facial regions, tested for statistical significance."
     >
       <div className="grid md:grid-cols-3 gap-4">
         <HypothesisCard
           code="H₀1"
-          statement="No difference between the Baseline and HueView within each lighting condition."
+          statement="No difference between the Baseline and ChroLumi within each lighting condition."
         />
         <HypothesisCard
           code="H₀2"
-          statement="No difference in HueView's performance among the six facial region configurations."
+          statement="No difference in ChroLumi's performance among the six facial region configurations."
         />
         <HypothesisCard
           code="H₀3"
-          statement="No difference in overall performance between the Baseline and HueView."
+          statement="No difference in overall performance between the Baseline and ChroLumi."
         />
       </div>
 
       <div className="flex flex-col gap-2">
-        <SubHead note="Full test set. Difference = HueView − Baseline.">Baseline vs HueView</SubHead>
-        <TestTable rows={block.h03} aLabel="Baseline" bLabel="HueView" />
+        <SubHead note="Full test set. Difference = ChroLumi − Baseline.">Baseline vs ChroLumi</SubHead>
+        <TestTable rows={block.h03} aLabel="Baseline" bLabel="ChroLumi" />
       </div>
 
       <More title="By lighting condition">
         <TestTable
           rows={block.h01.map((r) => ({ ...r, group: r.stratum }))}
           aLabel="Baseline"
-          bLabel="HueView"
+          bLabel="ChroLumi"
           groupLabel="Lighting"
         />
       </More>

@@ -25,7 +25,7 @@ export default function Upload({ onFile, busy, error }) {
 
       <p className="max-w-md text-[15px] leading-relaxed text-ink-soft mt-5">
         Upload a clear facial photo. Your image is analyzed twice — once by the baseline
-        pipeline and once by HueView — so you can see where the two disagree.
+        pipeline and once by ChroLumi — so you can see where the two disagree.
       </p>
 
       <div className="grid grid-cols-1 md:grid-cols-[1.15fr_0.85fr] gap-10 mt-10 pt-8 border-t border-line">

@@ -42,7 +42,7 @@ export const MOCK_RESULT = {
       confidence: 0.71,
       margin: 0.57,
       // Baseline works in RGB. No CIELAB block here — the conversion belongs
-      // to HueView, and carrying a lab field would invite it back onto the screen.
+      // to ChroLumi, and carrying a lab field would invite it back onto the screen.
       rgb: { R: 168, G: 132, B: 118 },
       regions: null,
       // Baseline rule: normalized RGB ratios, thresholded on the b ratio.
@@ -60,7 +60,7 @@ export const MOCK_RESULT = {
       inference_ms: 41,
     },
     hueview: {
-      name: "HueView",
+      name: "ChroLumi",
       method: "SSR + regional segmentation",
       checkpoint: "mock",
       placeholder: false,
@@ -77,7 +77,7 @@ export const MOCK_RESULT = {
         { name: "Jawline", L: 59.4, a: 14.9, b: 17.8, pixels: 4870, used: true },
         { name: "Full face", L: 62.4, a: 14.2, b: 18.7, pixels: 28647, used: false },
       ],
-      // HueView rule: hue angle on the regional CIELAB means.
+      // ChroLumi rule: hue angle on the regional CIELAB means.
       undertone: {
         method: "hue_angle",
         label: "Warm",

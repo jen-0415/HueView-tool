@@ -119,7 +119,7 @@ async def analyze_events(job_id: str):
             # Crop + SSR run first, for real, so the SSR image can stream to
             # the UI before classification finishes. Their crop and SSR image
             # are handed to build_result, so MTCNN runs once here (not again
-            # inside classify_image) and HueView analyzes the exact SSR image
+            # inside classify_image) and ChroLumi analyzes the exact SSR image
             # the user was shown.
             #
             # The remaining stages are beats: the rest of the pipeline runs as

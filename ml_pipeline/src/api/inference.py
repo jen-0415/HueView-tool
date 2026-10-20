@@ -84,7 +84,7 @@ def run_ssr_preview(image_bytes: bytes) -> Tuple[Dict, Dict]:
     Returns (previews, state). `previews` goes to the frontend; `state` is
     handed back to build_result() so the pipeline reuses the same crop and
     SSR image instead of recomputing them -- what the user sees is exactly
-    what HueView analyzes.
+    what ChroLumi analyzes.
     """
     crop, detection = preprocess_image(image_bytes)
     ssr = compute_ssr(crop)
@@ -148,7 +148,7 @@ def _ssr_steps(crop_rgb: np.ndarray, ssr_rgb: np.ndarray) -> Optional[list]:
 
 
 def build_result(image_bytes: bytes, filename: str = "", state: Optional[Dict] = None) -> Dict:
-    """The full dual-model payload, from the real pipeline, plus the HueView
+    """The full dual-model payload, from the real pipeline, plus the ChroLumi
     segmentation visuals and a description of how its final SCC is chosen."""
     capture: Dict = {}
     payload = classify_image(image_bytes, filename, **(state or {}), capture=capture)
@@ -158,7 +158,7 @@ def build_result(image_bytes: bytes, filename: str = "", state: Optional[Dict] =
         "method": "majority_vote",
         "heads": list(REGION_ORDER) + ["full_face"],
         "description": (
-            "Each of the six HueView models (five face regions and the full face) "
+            "Each of the six ChroLumi models (five face regions and the full face) "
             "votes for the skin color class it scores highest. The class with the "
             "most votes wins. If two classes get the same number of votes, the one "
             "with the higher average score across the six models wins."
@@ -218,7 +218,7 @@ def _zoom_to(img: np.ndarray, mask: np.ndarray, size: int = 160, pad: int = 6) -
 
 def _segmentation_visuals(crop: np.ndarray, capture: Dict) -> Dict:
     """
-    Pictures of what HueView's classification actually used, built from the
+    Pictures of what ChroLumi's classification actually used, built from the
     arrays run_hueview() captured -- nothing is recomputed:
       * geometric: Phase 7.3 landmark convex-hull regions on the crop
       * skin:      pixels kept by Phase 7.4's HSV filter (removed ones greyed)

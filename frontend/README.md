@@ -1,12 +1,12 @@
-# HueView frontend
+# ChroLumi frontend
 
-React + Vite + Tailwind. Uploads a face photo to the HueView API and shows the Baseline-vs-HueView comparison: face check, SSR intermediate images, both models' SCC and undertone, colour values, and HueView's regional segmentation with per-region SCC. It also serves the evaluation results read from the saved result files.
+React + Vite + Tailwind. Uploads a face photo to the ChroLumi API and shows the Baseline-vs-ChroLumi comparison: face check, SSR intermediate images, both models' SCC and undertone, colour values, and ChroLumi's regional segmentation with per-region SCC. It also serves the evaluation results read from the saved result files.
 
 ## Tabs
 
 Two, listed in `src/view.js`: **Analyze a photo** (left of the header) and **Evaluation Results** (far right). The open tab is kept in the URL hash, so `#evaluation` links straight to the results. Switching tabs never re-runs an analysis — `useAnalysis` sits above the tab state in `App.jsx`.
 
-`screens/Evaluation.jsx` shows the Baseline and HueView under each lighting level and HueView per facial region, with the confusion matrices and per-class results. It lays out only what `evaluate.py` and `appendix_tables.py` wrote; nothing is recomputed in the browser. The significance tests the API still returns under `significance` are not displayed.
+`screens/Evaluation.jsx` shows the Baseline and ChroLumi under each lighting level and ChroLumi per facial region, with the confusion matrices and per-class results. It lays out only what `evaluate.py` and `appendix_tables.py` wrote; nothing is recomputed in the browser. The significance tests the API still returns under `significance` are not displayed.
 
 ## SCC
 
