@@ -11,7 +11,7 @@ export default function RegionTable({ regions }) {
       <table className="w-full font-mono text-xs">
         <thead>
           <tr className="bg-blush">
-            {["Area", "L*", "a*", "b*", "Skin pixels"].map((h) => (
+            {["Area", "Lightness (L*)", "Redness (a*)", "Yellowness (b*)", "Skin pixels"].map((h) => (
               <th
                 key={h}
                 className="px-5 py-3 text-left font-normal tracking-widest text-[10px] text-accent"
