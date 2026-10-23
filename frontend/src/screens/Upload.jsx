@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import Card, { PanelHead } from "../components/Card";
 import { SCC, SCC_MEANING } from "../constants";
 
 export default function Upload({ onFile, busy, error }) {
@@ -12,47 +13,70 @@ export default function Upload({ onFile, busy, error }) {
   };
 
   return (
-    <main className="max-w-5xl mx-auto px-8 py-12">
-      <span className="font-mono text-[11px] tracking-widest text-accent">
-        SKIN TONE &amp; UNDERTONE ANALYSIS
-      </span>
-
-      <h1 className="font-display text-5xl leading-tight mt-4">
-        Discover your
-        <br />
-        <span className="italic text-accent">skin tone &amp; undertone</span>
+    <main className="max-w-[1120px] mx-auto px-4 sm:px-8 py-12 sm:py-16">
+      <h1 className="font-display text-hero font-semibold max-w-[20ch]">
+        Skin tone and undertone, measured twice
       </h1>
 
-      <p className="max-w-md text-[15px] leading-relaxed text-ink-soft mt-5">
-        Upload a clear facial photo. Your image is analyzed twice — once by the baseline
-        pipeline and once by ChroLumi — so you can see where the two disagree.
+      <p className="text-base leading-relaxed text-ink-mid mt-5">
+        Upload a clear facial photo. It is analysed once by the baseline pipeline and once by
+        ChroLumi, so you can see where the two disagree and why.
       </p>
 
-      <div className="grid grid-cols-1 md:grid-cols-[1.15fr_0.85fr] gap-10 mt-10 pt-8 border-t border-line">
+      <div className="grid grid-cols-1 md:grid-cols-[1.15fr_0.85fr] gap-8 lg:gap-12 mt-12">
         <div>
           <div
             role="button"
             tabIndex={0}
+            aria-label="Choose a photo to analyse"
             onClick={() => input.current.click()}
-            onKeyDown={(e) => e.key === "Enter" && input.current.click()}
-            onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                input.current.click();
+              }
+            }}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDrag(true);
+            }}
             onDragLeave={() => setDrag(false)}
-            onDrop={(e) => { e.preventDefault(); setDrag(false); take(e.dataTransfer.files[0]); }}
-            className={`h-64 rounded-2xl bg-white border-2 border-dashed flex flex-col items-center justify-center cursor-pointer focus:outline focus:outline-2 focus:outline-accent ${
-              drag ? "border-accent" : "border-line"
+            onDrop={(e) => {
+              e.preventDefault();
+              setDrag(false);
+              take(e.dataTransfer.files[0]);
+            }}
+            className={`group relative overflow-hidden rounded-panel bg-white cursor-pointer transition-colors duration-200 ${
+              drag ? "border-2 border-accent" : "border-2 border-dashed border-line hover:border-accent/60"
             }`}
           >
-            <div className="w-14 h-14 rounded-xl bg-blush grid place-items-center">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
-                   stroke="#C9145C" strokeWidth="2" strokeLinecap="round">
-                <path d="M12 17V3M12 3l-5 5M12 3l5 5M4 21h16" />
-              </svg>
+            {/* The six clusters as a calibration strip along the top edge: the
+                thing being measured, on the panel that takes the measurement. */}
+            <div className="flex h-2" aria-hidden="true">
+              {SCC.map((s) => (
+                <span key={s.id} className="flex-1" style={{ background: s.hex }} />
+              ))}
             </div>
-            <div className="font-semibold text-[17px] mt-4">
-              {busy ? "Detecting face…" : "Drop photo here"}
-            </div>
-            <div className="text-[13px] text-ink-soft mt-1">
-              or click to browse — JPG or PNG
+
+            <div className="h-60 flex flex-col items-center justify-center text-center px-6">
+              <div className="w-12 h-12 rounded-readout bg-blush grid place-items-center transition-transform duration-300 ease-settle group-hover:-translate-y-0.5">
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="#C9145C"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  aria-hidden="true"
+                >
+                  <path d="M12 17V3M12 3l-5 5M12 3l5 5M4 21h16" />
+                </svg>
+              </div>
+              <div className="font-semibold text-lead mt-4">
+                {busy ? "Detecting face…" : drag ? "Drop to analyse" : "Drop a photo here"}
+              </div>
+              <p className="text-fine text-ink-mid mt-1">or click to browse. JPG or PNG.</p>
             </div>
           </div>
 
@@ -65,45 +89,60 @@ export default function Upload({ onFile, busy, error }) {
           />
 
           {error && (
-            <p className="mt-4 text-[13px] text-accent bg-white border border-line rounded-xl px-4 py-3">
+            <p
+              role="alert"
+              className="mt-4 text-base text-accent bg-white border border-line rounded-readout px-5 py-3.5"
+            >
               {error}
             </p>
           )}
+
+          <p className="text-fine text-ink-mid mt-5">
+            The photo is sent to the analysis API, classified, and returned with every
+            intermediate step so the result can be checked.
+          </p>
         </div>
 
-        <div>
-          <span className="font-mono text-[11px] tracking-widest text-accent">
-            SCC REFERENCE SCALE
-          </span>
+        <Card>
+          <PanelHead title="The six SCC classes" note={SCC_MEANING.short} />
 
-          <p className="text-[13px] leading-relaxed text-ink-soft mt-3">
-            <b className="text-ink">SCC = {SCC_MEANING.name}</b>, the six skin tone groups this
-            tool classifies into. {SCC_MEANING.basis}
-          </p>
+          <div className="px-5 py-5">
+            <p className="text-fine leading-relaxed text-ink-mid">{SCC_MEANING.basis}</p>
 
-          <ul className="flex flex-col gap-2 mt-4">
-            {SCC.map((s) => (
-              <li key={s.id} className="flex items-center gap-3">
-                <span className="w-10 h-10 rounded-lg" style={{ background: s.hex }} />
-                <span>
-                  <span className="block font-mono text-[11px] text-accent">{s.id}</span>
-                  <span className="block text-[13px]">{s.label}</span>
-                </span>
-                <span className="ml-auto font-mono text-[11px] text-ink-soft">{s.mst}</span>
-              </li>
-            ))}
-          </ul>
+            <ul className="flex flex-col mt-4 divide-y divide-line-soft">
+              {SCC.map((s) => (
+                <li key={s.id} className="flex items-center gap-3 py-2.5">
+                  <span
+                    className="w-9 h-9 rounded-lg shrink-0 border border-rule/60"
+                    style={{ background: s.hex }}
+                  />
+                  <span className="min-w-0">
+                    <span className="block font-mono text-data text-ink-mid">{s.id}</span>
+                    <span className="block text-fine">{s.label}</span>
+                  </span>
+                  <span className="ml-auto font-mono text-data text-ink-mid shrink-0">
+                    {s.mst}
+                  </span>
+                </li>
+              ))}
+            </ul>
 
-          <p className="text-[11px] text-ink-soft mt-2">
-            Swatches are indicative colours for each group, not the MST reference patches.
-          </p>
+            <p className="text-fine text-ink-mid mt-4">
+              Swatches are indicative colours for each group, not the MST reference patches.
+            </p>
 
-          <div className="flex gap-2 mt-5">
-            <span className="rounded-full bg-warm text-warm-ink font-mono text-[11px] px-3 py-1">Warm</span>
-            <span className="rounded-full bg-neutraltone text-neutraltone-ink font-mono text-[11px] px-3 py-1">Neutral</span>
-            <span className="rounded-full bg-cool text-cool-ink font-mono text-[11px] px-3 py-1">Cool</span>
+            <div className="flex flex-wrap gap-2 mt-5 pt-5 border-t border-line-soft">
+              <span className="text-fine text-ink-mid w-full mb-1">
+                Undertone is reported alongside the class:
+              </span>
+              <span className="rounded-full bg-warm text-warm-ink text-data px-3 py-1">Warm</span>
+              <span className="rounded-full bg-neutraltone text-neutraltone-ink text-data px-3 py-1">
+                Neutral
+              </span>
+              <span className="rounded-full bg-cool text-cool-ink text-data px-3 py-1">Cool</span>
+            </div>
           </div>
-        </div>
+        </Card>
       </div>
     </main>
   );

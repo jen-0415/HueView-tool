@@ -140,7 +140,7 @@ function EvaluationSidebar({ page, onPick, data }) {
   return (
     <nav
       aria-label="Evaluation results"
-      className="w-full lg:w-[270px] lg:shrink-0 flex flex-col gap-4 lg:sticky lg:top-6"
+      className="w-full lg:w-[270px] lg:shrink-0 flex flex-col gap-4 lg:sticky lg:top-[84px]"
     >
       <Card tier="readout" className="px-5 py-4">
         <div className="text-data text-ink-mid">Test set</div>

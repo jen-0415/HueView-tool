@@ -1,59 +1,70 @@
-import Card from "../components/Card";
+import Card, { PanelHead } from "../components/Card";
 
 export default function Confirm({ preview, detection, error, onRun, onBack }) {
   return (
-    <main className="max-w-5xl mx-auto px-8 py-12">
-      <h2 className="font-display text-4xl">
-        Face detected — <span className="italic text-accent">confirm &amp; proceed</span>
-      </h2>
+    <main className="max-w-[1020px] mx-auto px-4 sm:px-8 py-12">
+      <h2 className="font-display text-head font-semibold">Face detected</h2>
+      <p className="text-base text-ink-mid mt-2">
+        Check the crop before running both pipelines on it.
+      </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mt-8">
         <Card>
-          <div className="px-5 py-3 border-b border-line-soft text-sm">Original upload</div>
+          <PanelHead title="Original upload" />
           <div className="p-6 flex justify-center">
-            <img src={preview} alt="" className="w-52 h-52 object-cover rounded-lg" />
+            <img
+              src={preview}
+              alt="The photo you uploaded"
+              className="w-52 h-52 object-cover rounded-readout border border-rule"
+            />
           </div>
         </Card>
 
-        <Card className="border-line">
-          <div className="px-5 py-3 border-b border-line-soft text-sm">Detected &amp; cropped</div>
+        <Card tier="readout">
+          <PanelHead title="Detected and cropped" note="This is what both models see." />
           <div className="p-6 flex justify-center">
             <img
               src={detection.crop_preview || preview}
-              alt=""
-              className="w-52 h-52 object-cover rounded-lg border-2 border-accent"
+              alt="The detected face, cropped and resized"
+              className="w-52 h-52 object-cover rounded-readout outline outline-2 outline-offset-2 outline-accent"
             />
           </div>
         </Card>
       </div>
 
-      <Card className="mt-6">
-        <div className="grid grid-cols-2 py-5">
-          <Stat label="Crop resolution" value="224 × 224 px" className="bg-blush-soft text-cool-ink" />
-          <Stat label="Landmarks found" value={`${detection.landmarks_found} / 5`} className="bg-blush text-accent" />
-        </div>
+      <Card className="mt-5">
+        <dl className="grid grid-cols-2 divide-x divide-line-soft">
+          <Stat label="Crop resolution" value="224 × 224 px" />
+          <Stat label="Key points found" value={`${detection.landmarks_found} / 5`} accent />
+        </dl>
       </Card>
 
       {detection.upscaled && (
-        <p className="mt-4 text-[13px] text-warm-ink bg-warm rounded-xl px-4 py-3">
+        <p className="mt-4 text-base text-warm-ink bg-warm rounded-readout px-5 py-3.5">
           This face was smaller than 224 px and has been upscaled. Results may be less reliable.
         </p>
       )}
 
       {error && (
-        <p className="mt-4 text-[13px] text-accent bg-white border border-line rounded-xl px-4 py-3">
+        <p
+          role="alert"
+          className="mt-4 text-base text-accent bg-white border border-line rounded-readout px-5 py-3.5"
+        >
           {error}
         </p>
       )}
 
-      <div className="flex items-center gap-4 mt-8">
+      <div className="flex items-center gap-5 mt-8 flex-wrap">
         <button
           onClick={onRun}
-          className="rounded-full px-10 py-4 text-white font-semibold bg-gradient-to-r from-accent to-accent-light"
+          className="rounded-full px-9 py-4 text-white font-semibold bg-accent hover:bg-accent-light transition-colors duration-200"
         >
           Run both analyses
         </button>
-        <button onClick={onBack} className="text-sm text-ink-soft">
+        <button
+          onClick={onBack}
+          className="text-fine text-ink-mid underline decoration-line underline-offset-4 hover:text-accent hover:decoration-accent transition-colors duration-200"
+        >
           Use a different photo
         </button>
       </div>
@@ -61,13 +72,13 @@ export default function Confirm({ preview, detection, error, onRun, onBack }) {
   );
 }
 
-function Stat({ label, value, className }) {
+function Stat({ label, value, accent }) {
   return (
-    <div className="text-center">
-      <div className="text-[13px] text-ink-soft">{label}</div>
-      <div className={`inline-block rounded-lg px-4 py-2 mt-2 font-mono text-[15px] ${className}`}>
+    <div className="px-6 py-5 text-center">
+      <dt className="text-fine text-ink-mid">{label}</dt>
+      <dd className={`font-mono text-title mt-1.5 ${accent ? "text-accent" : "text-ink"}`}>
         {value}
-      </div>
+      </dd>
     </div>
   );
 }

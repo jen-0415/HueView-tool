@@ -16,3 +16,17 @@ export const ORDER = [
   ...STEPS,
   { id: "compare", label: "Baseline vs ChroLumi" },
 ];
+
+// The stage events the API streams while an analysis runs, in the order
+// routes.py sends them. Keys must match STAGE_KEYS in
+// ml_pipeline/src/api/inference.py, or the progress list silently stops
+// advancing. These are NOT the result stages above: the result stages are what
+// the user can browse afterwards, these are what is happening right now.
+export const ANALYSIS_STAGES = [
+  { key: "detect", label: "Finding the face" },
+  { key: "ssr", label: "Correcting the lighting" },
+  { key: "segment", label: "Outlining the face areas" },
+  { key: "cnn", label: "Classifying each area" },
+  { key: "lab", label: "Reading the colour values" },
+  { key: "undertone", label: "Estimating the undertone" },
+];

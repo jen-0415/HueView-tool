@@ -177,13 +177,16 @@ export function analyze(
 function mockAnalyze(onStage, onResult) {
   let cancelled = false;
 
+  // Must match STAGE_KEYS in ml_pipeline/src/api/inference.py and
+  // ANALYSIS_STAGES in stages.js -- mock mode is only useful if it sends the
+  // same stage events the real API does.
   const stages = [
     "detect",
-    "crop",
-    "normalize",
-    "extract",
-    "predict",
-    "compare",
+    "ssr",
+    "segment",
+    "cnn",
+    "lab",
+    "undertone",
   ];
 
   const timings = [
