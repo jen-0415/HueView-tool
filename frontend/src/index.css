@@ -2,6 +2,106 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-blush text-ink font-sans;
+@layer base {
+  html {
+    /* Fraunces is variable: tune the optical-size and softness axes once here
+       rather than per-heading. */
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    @apply bg-blush text-ink font-sans text-base;
+  }
+
+  /* Every numeral in the tool is a measurement that sits in a column next to
+     another measurement, so digits must be the same width everywhere. */
+  .font-mono,
+  table,
+  input,
+  select {
+    font-variant-numeric: tabular-nums;
+  }
+
+  h1,
+  h2,
+  h3 {
+    /* Fraunces' default optical size is set for body copy; headings want the
+       display cut, tighter tracking and a touch of the soft axis. */
+    font-variation-settings: "SOFT" 20, "WONK" 0, "opsz" 36;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+
+  /* The UA focus ring is near-invisible against blush. One visible ring for
+     everything, keyboard-only so it never appears on mouse clicks. */
+  :focus-visible {
+    outline: 2px solid theme("colors.accent.DEFAULT");
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Prose caps its own measure; justified text opened rivers in the narrow
+     content column, so everything is set ragged-right. */
+  p {
+    max-width: 72ch;
+    text-align: start;
+  }
+}
+
+@layer utilities {
+  /* The three surface tiers. Panel = reference material. Readout = a value you
+     are meant to read off, with a crimson rule on its measured edge. Verdict =
+     the headline finding, flush in the content column. */
+  .surface-panel {
+    @apply bg-white border border-line-soft rounded-panel shadow-panel;
+  }
+
+  .surface-readout {
+    @apply bg-white border border-rule rounded-readout shadow-readout;
+  }
+
+  /* Result-arrival sequence: geometry only. The numbers are always rendered as
+     text immediately, so nothing on screen is ever a value that isn't real. */
+  .measure-in {
+    transform-origin: left center;
+    animation: measure-in 420ms var(--ease-settle, cubic-bezier(.2, .8, .2, 1)) both;
+    animation-delay: var(--measure-delay, 0ms);
+  }
+
+  .panel-in {
+    animation: panel-in 180ms cubic-bezier(.2, .8, .2, 1) both;
+  }
+}
+
+@keyframes measure-in {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* A researcher scrolling fast through a confusion matrix should never wait for
+   the page. One guard, everything off. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
