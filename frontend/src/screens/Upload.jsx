@@ -15,7 +15,7 @@ export default function Upload({ onFile, busy, error }) {
   return (
     <main className="max-w-[1120px] mx-auto px-4 sm:px-8 py-12 sm:py-16">
       <h1 className="font-display text-hero font-semibold max-w-[20ch]">
-        Skin tone and undertone, measured twice
+        <span className="text-accent">Skin tone and undertone</span>, measured twice
       </h1>
 
       <p className="text-base leading-relaxed text-ink-mid mt-5">
