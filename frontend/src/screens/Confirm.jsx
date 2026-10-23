@@ -57,7 +57,7 @@ export default function Confirm({ preview, detection, error, onRun, onBack }) {
       <div className="flex items-center gap-5 mt-8 flex-wrap">
         <button
           onClick={onRun}
-          className="rounded-full px-9 py-4 text-white font-semibold bg-accent hover:bg-accent-light transition-colors duration-200"
+          className="rounded-full px-9 py-4 text-white font-semibold bg-accent hover:bg-accent-light press transition-colors duration-200"
         >
           Run both analyses
         </button>

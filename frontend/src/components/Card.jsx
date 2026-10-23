@@ -18,8 +18,12 @@ const TIERS = {
   readout: "surface-readout",
 };
 
-export default function Card({ tier = "panel", children, className = "" }) {
-  return <div className={`${TIERS[tier] ?? TIERS.panel} ${className}`}>{children}</div>;
+export default function Card({ tier = "panel", children, className = "", style }) {
+  return (
+    <div className={`${TIERS[tier] ?? TIERS.panel} ${className}`} style={style}>
+      {children}
+    </div>
+  );
 }
 
 // A panel's own header. The old code repeated `px-6 py-4 border-b

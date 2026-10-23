@@ -78,6 +78,37 @@
     animation: cue-in 320ms cubic-bezier(.2, .8, .2, 1) both;
     animation-delay: var(--measure-delay, 0ms);
   }
+
+  /* The upload screen's one load sequence. Used nowhere else: a fade-and-rise
+     on every section of every page is the house style of a generated site,
+     and it would sit badly on a screen of measurements. */
+  .rise-in {
+    animation: rise-in 560ms cubic-bezier(.2, .8, .2, 1) both;
+    animation-delay: var(--rise-delay, 0ms);
+  }
+
+  /* Press feedback. Pointer-only, so it never fires from a keyboard
+     activation where the focus ring is already the feedback. */
+  .press {
+    transition: transform 140ms cubic-bezier(.2, .8, .2, 1);
+  }
+
+  @media (hover: hover) {
+    .press:active {
+      transform: scale(0.985);
+    }
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @keyframes cue-in {

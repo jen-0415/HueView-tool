@@ -17,9 +17,6 @@ export function useAnalysis() {
   // { original, ssr, steps } data URLs, streamed before the result and shown
   // later in the Results screen's lighting-correction stage.
   const [ssrPreview, setSsrPreview] = useState(null);
-  // { [stageKey]: "running" | "done" } from the API's "stage" events, shown on
-  // the analysing screen. The API already streamed these; they were discarded.
-  const [stages, setStages] = useState({});
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -34,7 +31,6 @@ export function useAnalysis() {
     setDetection(null);
     setResult(null);
     setSsrPreview(null);
-    setStages({});
     setError(null);
   }, []);
 
@@ -63,7 +59,6 @@ export function useAnalysis() {
       if (target === "confirm") {
         setResult(null);
         setSsrPreview(null);
-        setStages({});
         setError(null);
       }
     };
@@ -97,12 +92,11 @@ export function useAnalysis() {
   const run = useCallback(() => {
     setError(null);
     setSsrPreview(null);
-    setStages({});
     goTo("analyzing");
 
     cancelAnalysis.current = analyze(
       file,
-      ({ key, status }) => setStages((prev) => ({ ...prev, [key]: status })),
+      () => {}, // per-stage progress isn't shown
       (r) => {
         cancelAnalysis.current = null;
         setResult(r);
@@ -126,7 +120,7 @@ export function useAnalysis() {
   }, [clearAll, goTo]);
 
   return {
-    screen, preview, detection, result, ssrPreview, stages,
+    screen, preview, detection, result, ssrPreview,
     error, busy, upload, run, reset,
   };
 }

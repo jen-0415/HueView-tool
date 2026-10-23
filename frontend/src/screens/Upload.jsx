@@ -14,17 +14,22 @@ export default function Upload({ onFile, busy, error }) {
 
   return (
     <main className="max-w-[1120px] mx-auto px-4 sm:px-8 py-12 sm:py-16">
-      <h1 className="font-display text-hero font-semibold max-w-[20ch]">
+      {/* The page's one orchestrated moment: four beats on first paint, and
+          nothing animates on scroll afterwards. */}
+      <h1 className="font-display text-hero font-semibold max-w-[20ch] rise-in">
         <span className="text-accent">Skin tone and undertone</span>, measured twice
       </h1>
 
-      <p className="text-base leading-relaxed text-ink-mid mt-5">
+      <p
+        className="text-base leading-relaxed text-ink-mid mt-5 rise-in"
+        style={{ "--rise-delay": "80ms" }}
+      >
         Upload a clear facial photo. It is analysed once by the baseline pipeline and once by
         ChroLumi, so you can see where the two disagree and why.
       </p>
 
       <div className="grid grid-cols-1 md:grid-cols-[1.15fr_0.85fr] gap-8 lg:gap-12 mt-12">
-        <div>
+        <div className="rise-in" style={{ "--rise-delay": "160ms" }}>
           <div
             role="button"
             tabIndex={0}
@@ -46,13 +51,20 @@ export default function Upload({ onFile, busy, error }) {
               setDrag(false);
               take(e.dataTransfer.files[0]);
             }}
-            className={`group relative overflow-hidden rounded-panel bg-white cursor-pointer transition-colors duration-200 ${
-              drag ? "border-2 border-accent" : "border-2 border-dashed border-line hover:border-accent/60"
+            className={`group relative overflow-hidden rounded-panel bg-white cursor-pointer press transition-[border-color,box-shadow,transform] duration-200 ease-settle hover:shadow-readout ${
+              drag
+                ? "border-2 border-accent shadow-readout -translate-y-0.5"
+                : "border-2 border-dashed border-line hover:border-accent/60 hover:-translate-y-0.5"
             }`}
           >
             {/* The six clusters as a calibration strip along the top edge: the
                 thing being measured, on the panel that takes the measurement. */}
-            <div className="flex h-2" aria-hidden="true">
+            <div
+              className={`flex transition-[height] duration-300 ease-settle ${
+                drag ? "h-4" : "h-2"
+              }`}
+              aria-hidden="true"
+            >
               {SCC.map((s) => (
                 <span key={s.id} className="flex-1" style={{ background: s.hex }} />
               ))}
@@ -103,7 +115,7 @@ export default function Upload({ onFile, busy, error }) {
           </p>
         </div>
 
-        <Card>
+        <Card className="rise-in" style={{ "--rise-delay": "240ms" }}>
           <PanelHead title="The six SCC classes" note={SCC_MEANING.short} />
 
           <div className="px-5 py-5">
@@ -111,9 +123,9 @@ export default function Upload({ onFile, busy, error }) {
 
             <ul className="flex flex-col mt-4 divide-y divide-line-soft">
               {SCC.map((s) => (
-                <li key={s.id} className="flex items-center gap-3 py-2.5">
+                <li key={s.id} className="group flex items-center gap-3 py-2.5">
                   <span
-                    className="w-9 h-9 rounded-lg shrink-0 border border-rule/60"
+                    className="w-9 h-9 rounded-lg shrink-0 border border-rule/60 transition-transform duration-300 ease-settle group-hover:scale-105"
                     style={{ background: s.hex }}
                   />
                   <span className="min-w-0">

@@ -8,8 +8,14 @@ export default function Header({ tab, onTab }) {
           from announcing it twice. */}
       <div className="flex items-center gap-2.5 shrink-0">
         <img src="/chrolumi.png" alt="" width="44" height="36" className="h-9 w-auto" />
-        <span className="font-display text-sub font-semibold tracking-tight">
-          <span className="italic text-ink">Chro</span>
+        {/* Fraunces is variable, so the logotype can sit at 300 with its
+            optical size set for display: thin strokes, open counters, and a
+            touch of positive tracking so the light weight doesn't crowd. */}
+        <span
+          className="font-display text-[1.375rem] leading-none tracking-[0.02em] text-ink"
+          style={{ fontWeight: 300, fontVariationSettings: '"opsz" 72, "SOFT" 30, "WONK" 0' }}
+        >
+          <span className="italic">Chro</span>
           <span className="text-accent">Lumi</span>
         </span>
       </div>
@@ -21,7 +27,7 @@ export default function Header({ tab, onTab }) {
               key={t.id}
               onClick={() => onTab(t.id)}
               aria-current={tab === t.id ? "page" : undefined}
-              className={`rounded-full px-4 min-h-[40px] text-fine transition-colors duration-200 ${
+              className={`rounded-full px-4 min-h-[40px] text-fine press transition-colors duration-200 ${
                 t.right ? "ml-auto" : ""
               } ${
                 tab === t.id

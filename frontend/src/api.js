@@ -177,9 +177,9 @@ export function analyze(
 function mockAnalyze(onStage, onResult) {
   let cancelled = false;
 
-  // Must match STAGE_KEYS in ml_pipeline/src/api/inference.py and
-  // ANALYSIS_STAGES in stages.js -- mock mode is only useful if it sends the
-  // same stage events the real API does.
+  // Must match STAGE_KEYS in ml_pipeline/src/api/inference.py -- mock mode is
+  // only useful if it sends the same stage events the real API does. Nothing
+  // renders them today; the loading screen shows a spinner.
   const stages = [
     "detect",
     "ssr",

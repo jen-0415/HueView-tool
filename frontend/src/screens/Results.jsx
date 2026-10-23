@@ -65,7 +65,7 @@ export default function Results({ preview, result, ssrPreview, onReset }) {
             {idx > 0 && (
               <button
                 onClick={() => pick(ORDER[idx - 1].id)}
-                className="rounded-full bg-white border border-line text-accent text-fine px-5 min-h-[44px] hover:border-accent transition-colors duration-200"
+                className="rounded-full bg-white border border-line text-accent text-fine px-5 min-h-[44px] hover:border-accent press transition-colors duration-200"
               >
                 <span className="text-ink-mid">Back to</span> {ORDER[idx - 1].label}
               </button>
@@ -75,7 +75,7 @@ export default function Results({ preview, result, ssrPreview, onReset }) {
             {idx < ORDER.length - 1 && (
               <button
                 onClick={() => pick(ORDER[idx + 1].id)}
-                className="rounded-full bg-accent text-white text-fine font-semibold px-5 min-h-[44px] hover:bg-accent-light transition-colors duration-200"
+                className="rounded-full bg-accent text-white text-fine font-semibold px-5 min-h-[44px] hover:bg-accent-light press transition-colors duration-200"
               >
                 Next: {ORDER[idx + 1].label}
               </button>
@@ -143,7 +143,7 @@ function Chip({ onClick, children }) {
   return (
     <button
       onClick={onClick}
-      className="rounded-full bg-white border border-line text-accent text-fine px-4 min-h-[36px] hover:border-accent transition-colors duration-200"
+      className="rounded-full bg-white border border-line text-accent text-fine px-4 min-h-[36px] hover:border-accent press transition-colors duration-200"
     >
       {children}
     </button>

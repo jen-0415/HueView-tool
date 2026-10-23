@@ -32,7 +32,7 @@ export default function App() {
         />
       )}
 
-      {tab === "analyze" && a.screen === "analyzing" && <Analyzing stages={a.stages} />}
+      {tab === "analyze" && a.screen === "analyzing" && <Analyzing />}
 
       {tab === "analyze" && a.screen === "results" && (
         <Results

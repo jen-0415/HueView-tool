@@ -109,7 +109,7 @@ export default function Evaluation() {
             {idx > 0 && (
               <button
                 onClick={() => pick(PAGES[idx - 1].id)}
-                className="rounded-full bg-white border border-line text-accent text-fine px-5 min-h-[44px] hover:border-accent transition-colors duration-200"
+                className="rounded-full bg-white border border-line text-accent text-fine px-5 min-h-[44px] hover:border-accent press transition-colors duration-200"
               >
                 <span className="text-ink-mid">Back to</span> {PAGES[idx - 1].label}
               </button>
@@ -119,7 +119,7 @@ export default function Evaluation() {
             {idx < PAGES.length - 1 && (
               <button
                 onClick={() => pick(PAGES[idx + 1].id)}
-                className="rounded-full bg-accent text-white text-fine font-semibold px-5 min-h-[44px] hover:bg-accent-light transition-colors duration-200"
+                className="rounded-full bg-accent text-white text-fine font-semibold px-5 min-h-[44px] hover:bg-accent-light press transition-colors duration-200"
               >
                 Next: {PAGES[idx + 1].label}
               </button>
