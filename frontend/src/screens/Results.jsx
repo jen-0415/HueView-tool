@@ -1,5 +1,5 @@
 import { useState } from "react";
-import Card from "../components/Card";
+import Card, { Verdict, Reading } from "../components/Card";
 import ModelCard from "../components/ModelCard";
 import ColorValuesCard from "../components/ColorValuesCard";
 import IlluminationCard from "../components/IlluminationCard";
@@ -14,6 +14,7 @@ import {
 } from "../components/RegionalSegmentationCard";
 import { sccLabel } from "../constants";
 import { STEPS, ORDER } from "../stages";
+import { useArrival } from "../motion";
 
 // One photo's result, shown the same way to every reader (the user/researcher
 // switch only controls the Evaluation Results tab -- see view.js).
@@ -24,13 +25,16 @@ import { STEPS, ORDER } from "../stages";
 export default function Results({ preview, result, ssrPreview, onReset }) {
   const [stage, setStage] = useState("summary");
   const idx = ORDER.findIndex((o) => o.id === stage);
+  // One orchestrated moment per analysis: held here, not asked for by each
+  // panel, so switching stages never replays it.
+  const arriving = useArrival();
 
   const pick = (id) => {
     setStage(id);
     window.scrollTo({ top: 0 });
   };
 
-  const props = { result, ssrPreview, preview, pick };
+  const props = { result, ssrPreview, preview, pick, arriving };
 
   return (
     <main className="max-w-[1360px] mx-auto px-4 sm:px-8 py-7 flex flex-col lg:flex-row gap-7 items-start">
@@ -42,6 +46,8 @@ export default function Results({ preview, result, ssrPreview, onReset }) {
       />
 
       <section className="flex-1 min-w-0 w-full flex flex-col gap-5">
+        {/* Keyed on the stage so each panel crossfades in on switch. */}
+        <div key={stage} className="panel-in flex flex-col gap-5">
         {stage === "summary" && <SummaryPanel {...props} />}
         {stage === "detect" && <DetectPanel {...props} />}
         {stage === "illum" && <IlluminationPanel {...props} />}
@@ -52,15 +58,16 @@ export default function Results({ preview, result, ssrPreview, onReset }) {
         {stage === "decision" && <DecisionPanel {...props} />}
         {stage === "under" && <UndertonePanel {...props} />}
         {stage === "compare" && <ComparePanel {...props} />}
+        </div>
 
         <div className="flex justify-between gap-3 flex-wrap border-t border-line pt-4">
           <div>
             {idx > 0 && (
               <button
                 onClick={() => pick(ORDER[idx - 1].id)}
-                className="rounded-full bg-white border border-line text-accent text-sm px-4 min-h-[44px]"
+                className="rounded-full bg-white border border-line text-accent text-fine px-5 min-h-[44px] hover:border-accent transition-colors duration-200"
               >
-                ← {ORDER[idx - 1].label}
+                <span className="text-ink-mid">Back to</span> {ORDER[idx - 1].label}
               </button>
             )}
           </div>
@@ -68,9 +75,9 @@ export default function Results({ preview, result, ssrPreview, onReset }) {
             {idx < ORDER.length - 1 && (
               <button
                 onClick={() => pick(ORDER[idx + 1].id)}
-                className="rounded-full bg-accent text-white text-sm font-semibold px-5 min-h-[44px]"
+                className="rounded-full bg-accent text-white text-fine font-semibold px-5 min-h-[44px] hover:bg-accent-light transition-colors duration-200"
               >
-                {ORDER[idx + 1].label} →
+                Next: {ORDER[idx + 1].label}
               </button>
             )}
           </div>
@@ -82,46 +89,51 @@ export default function Results({ preview, result, ssrPreview, onReset }) {
 
 /* ---------- shared bits ---------- */
 
-const sccText = (m) => (m.scc ? `${m.scc} — ${sccLabel(m.scc)}` : "No prediction");
+const sccText = (m) => (m.scc ? `${m.scc} ${sccLabel(m.scc)}` : "No prediction");
+
+// Which pipelines a stage belongs to is a property of the stage, so it is
+// shown as a state, not buried in a sentence. The sidebar's rail uses the
+// same three values.
+const SCOPE_STYLE = {
+  "shared by both pipelines": "bg-neutraltone text-ink-mid",
+  "ChroLumi only": "bg-blush-soft text-accent border border-line",
+  experimental: "bg-warm text-warm-ink",
+};
 
 function StageHeader({ id, title }) {
   const step = STEPS.find((s) => s.id === id);
-  const eyebrow = step
-    ? `Stage ${step.n} of ${String(STEPS.length).padStart(2, "0")} · ${step.scope}`
-    : title;
   return (
     <div>
-      <div className="font-mono text-[11px] tracking-widest uppercase text-ink-soft">{eyebrow}</div>
-      <h2 className="font-display text-[32px] font-medium mt-1.5">{title}</h2>
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="font-mono text-data text-ink-mid">
+          {step ? `Stage ${step.n} of ${String(STEPS.length).padStart(2, "0")}` : "Stage"}
+        </span>
+        {step && (
+          <span
+            className={`rounded-full px-2.5 py-0.5 text-data ${
+              SCOPE_STYLE[step.scope] ?? "bg-neutraltone text-ink-mid"
+            }`}
+          >
+            {step.scope}
+          </span>
+        )}
+      </div>
+      <h2 className="font-display text-head font-semibold mt-2">{title}</h2>
     </div>
   );
 }
 
+// What this step did. The paragraph is self-evidently an explanation, so it no
+// longer carries a label above it.
 function Happened({ children }) {
-  return (
-    <>
-      <div className="font-mono text-[11px] tracking-widest uppercase text-ink-soft mb-1.5">
-        What happened
-      </div>
-      <p className="text-sm leading-relaxed text-[#3A2A2E] mb-4 text-justify">{children}</p>
-    </>
-  );
+  return <p className="text-base leading-relaxed text-ink-mid mb-5">{children}</p>;
 }
 
-function Meaning({ children }) {
-  return (
-    <div className="bg-blush-soft border border-line rounded-[14px] px-5 py-4">
-      <div className="font-mono text-[11px] tracking-widest uppercase text-accent">
-        What this means
-      </div>
-      <div className="mt-2 text-[15px] leading-relaxed space-y-2 text-justify">{children}</div>
-    </div>
-  );
-}
+const Meaning = Reading;
 
 function Unavailable({ what }) {
   return (
-    <Card className="px-6 py-5 text-sm text-ink-soft">
+    <Card className="px-6 py-5 text-base text-ink-mid">
       {what} isn&apos;t available for this result.
     </Card>
   );
@@ -131,7 +143,7 @@ function Chip({ onClick, children }) {
   return (
     <button
       onClick={onClick}
-      className="rounded-full bg-white border border-line text-accent text-[13px] px-3.5 min-h-[36px]"
+      className="rounded-full bg-white border border-line text-accent text-fine px-4 min-h-[36px] hover:border-accent transition-colors duration-200"
     >
       {children}
     </button>
@@ -140,56 +152,58 @@ function Chip({ onClick, children }) {
 
 /* ---------- panels ---------- */
 
-function SummaryPanel({ result, pick }) {
+function SummaryPanel({ result, pick, arriving }) {
   const { baseline, hueview } = result.models;
   // A null SCC means that model's weights aren't loaded -- never call two
   // missing predictions an agreement.
   const bothPredicted = Boolean(baseline.scc && hueview.scc);
   const agree = bothPredicted && baseline.scc === hueview.scc;
+  const missing = [baseline, hueview].filter((m) => !m.scc).map((m) => m.name);
 
   return (
     <>
       <div>
-        <div className="font-mono text-[11px] tracking-widest uppercase text-ink-soft">Summary</div>
-        <h2 className="font-display italic text-[34px] font-medium mt-1.5">Analysis results</h2>
-        <p className="font-mono text-[11px] text-ink-soft mt-1">
-          EfficientNetB0 · STW · baseline {baseline.checkpoint} · hueview {hueview.checkpoint}
-        </p>
+        <h2 className="font-display text-head font-semibold">Analysis results</h2>
+        <dl className="flex flex-wrap gap-x-7 gap-y-1 mt-3 text-data font-mono text-ink-mid">
+          <div>
+            <dt className="inline">Architecture </dt>
+            <dd className="inline text-ink">EfficientNetB0</dd>
+          </div>
+          <div>
+            <dt className="inline">Weighting </dt>
+            <dd className="inline text-ink">STW</dd>
+          </div>
+          <div>
+            <dt className="inline">Baseline ckpt </dt>
+            <dd className="inline text-ink">{baseline.checkpoint}</dd>
+          </div>
+          <div>
+            <dt className="inline">ChroLumi ckpt </dt>
+            <dd className="inline text-ink">{hueview.checkpoint}</dd>
+          </div>
+        </dl>
       </div>
 
       {/* The headline finding. Do not bury this in a table. */}
       {bothPredicted ? (
-        <div
-          className={`rounded-2xl px-6 py-4 flex flex-wrap items-center gap-x-4 gap-y-1 border ${
-            agree ? "bg-ok-bg border-ok" : "bg-blush-soft border-accent"
-          }`}
+        <Verdict
+          tone={agree ? "agree" : "disagree"}
+          headline={agree ? "Both pipelines agree" : "The pipelines disagree"}
         >
-          <span className={`font-display text-xl ${agree ? "text-ok" : "text-accent"}`}>
-            {agree ? "Both pipelines agree" : "The pipelines disagree"}
-          </span>
-          <span className="text-sm text-ink-soft">
-            {agree
-              ? `Both classified this face as ${sccText(baseline)}.`
-              : `Baseline read this face as ${sccText(baseline)}; ChroLumi read it as ${sccText(hueview)}.`}
-          </span>
-        </div>
+          {agree
+            ? `Both classified this face as ${sccText(baseline)}.`
+            : `Baseline read this face as ${sccText(baseline)}; ChroLumi read it as ${sccText(hueview)}.`}
+        </Verdict>
       ) : (
-        <div className="rounded-2xl px-6 py-4 flex flex-wrap items-center gap-x-4 gap-y-1 border bg-warm border-warm-ink/30">
-          <span className="font-display text-xl text-warm-ink">Comparison unavailable</span>
-          <span className="text-sm text-ink-soft">
-            {[baseline, hueview]
-              .filter((m) => !m.scc)
-              .map((m) => m.name)
-              .join(" and ")}{" "}
-            gave no result because its model isn&apos;t loaded, so the two can&apos;t be compared
-            for this photo.
-          </span>
-        </div>
+        <Verdict tone="caution" headline="Comparison unavailable">
+          {missing.join(" and ")} gave no result because its model isn&apos;t loaded, so the two
+          can&apos;t be compared for this photo.
+        </Verdict>
       )}
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
-        <ModelCard model={baseline} />
-        <ModelCard model={hueview} primary />
+        <ModelCard model={baseline} arriving={arriving} />
+        <ModelCard model={hueview} primary arriving={arriving} />
       </div>
 
       <SccScaleCard predicted={hueview.scc} />
@@ -206,10 +220,10 @@ function SummaryPanel({ result, pick }) {
           labels, so treat it as a rough guide.
         </p>
         <div className="flex flex-wrap gap-2 pt-2 items-center">
-          <span className="text-[13px] text-ink-soft">See where the result comes from:</span>
-          <Chip onClick={() => pick("ssr")}>03 Lighting correction →</Chip>
-          <Chip onClick={() => pick("region")}>06 Region results →</Chip>
-          <Chip onClick={() => pick("decision")}>07 Final decision →</Chip>
+          <span className="text-fine text-ink-mid">See where the result comes from:</span>
+          <Chip onClick={() => pick("ssr")}>03 Lighting correction</Chip>
+          <Chip onClick={() => pick("region")}>06 Region results</Chip>
+          <Chip onClick={() => pick("decision")}>07 Final decision</Chip>
         </div>
       </Meaning>
     </>

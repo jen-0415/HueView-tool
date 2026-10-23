@@ -52,8 +52,14 @@ export function useArrival() {
   return !reduced && !elapsed;
 }
 
-// Applied to a measured bar or strip. Returns nothing when the sequence is
-// over or motion is reduced, so the element just renders at its value.
-export function measure(active, i = 0) {
-  return active ? { className: "measure-in", style: stagger(i) } : { className: "", style: undefined };
+// Applied to a measured bar or strip, composed into the element's own class
+// and style rather than spread over them:
+//
+//   className={`h-full ${measureCls(arriving)}`}
+//   style={{ width: `${pct}%`, ...stagger(i) }}
+//
+// Both return nothing once the sequence is over, so the element simply renders
+// at its value.
+export function measureCls(active) {
+  return active ? "measure-in" : "";
 }
