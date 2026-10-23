@@ -515,7 +515,7 @@ function ComparePage({ page, baseline, hueview }) {
         )}
         , while the Baseline&apos;s strengths lie in accuracy and precision.
       </p>
-      <p className="text-[13px] text-ink-soft">
+      <p className="text-fine text-ink-mid">
         The full comparison for every metric and lighting group is in the table below.
       </p>
     </>
