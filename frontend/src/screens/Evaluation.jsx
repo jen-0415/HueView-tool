@@ -36,10 +36,10 @@ export default function Evaluation() {
   if (error) {
     return (
       <main className="max-w-[1100px] mx-auto px-4 sm:px-8 py-7">
-        <Card className="px-6 py-5 text-sm">
-          <div className="font-semibold text-accent">The results could not be loaded.</div>
-          <p className="text-ink-soft mt-1">{error}</p>
-          <p className="text-ink-soft mt-1">
+        <Card className="px-6 py-5">
+          <div className="font-semibold text-lead text-accent">The results could not be loaded.</div>
+          <p className="text-base text-ink-mid mt-1.5">{error}</p>
+          <p className="text-fine text-ink-mid mt-1.5">
             This tab reads the backend&apos;s saved evaluation files, so the API server has to be running.
           </p>
         </Card>
@@ -47,7 +47,24 @@ export default function Evaluation() {
     );
   }
   if (!data) {
-    return <main className="max-w-[1100px] mx-auto px-4 sm:px-8 py-7 text-ink-soft">Loading results…</main>;
+    // A skeleton of the page that is coming, rather than one line of text in
+    // the corner of an otherwise empty screen.
+    return (
+      <main className="max-w-[1360px] mx-auto px-4 sm:px-8 py-7 flex flex-col lg:flex-row gap-7 items-start">
+        <div className="w-full lg:w-[270px] lg:shrink-0 flex flex-col gap-4">
+          <div className="h-24 rounded-panel bg-white/60 border border-line-soft" />
+          <div className="h-80 rounded-panel bg-white/60 border border-line-soft" />
+        </div>
+        <section className="flex-1 min-w-0 w-full flex flex-col gap-5">
+          <div className="h-10 w-2/3 rounded-lg bg-white/60" />
+          <div className="h-4 w-full rounded bg-white/50" />
+          <div className="h-64 rounded-panel bg-white/60 border border-line-soft" />
+          <p className="text-fine text-ink-mid" role="status">
+            Loading the saved evaluation results…
+          </p>
+        </section>
+      </main>
+    );
   }
 
   const idx = PAGES.findIndex((q) => q.id === page);
@@ -254,8 +271,10 @@ function More({ title, children }) {
   );
 }
 
-const th = "px-3 py-2 text-left font-normal text-[10px] tracking-widest uppercase text-accent";
-const thR = "px-3 py-2 text-right font-normal text-[10px] tracking-widest uppercase text-accent";
+// Sticky so a long per-class table keeps its headers while it scrolls, and at
+// 13px medium rather than 10px tracked-out caps.
+const th = "sticky top-0 bg-blush px-3 py-2.5 text-left text-fine font-medium text-accent";
+const thR = "sticky top-0 bg-blush px-3 py-2.5 text-right text-fine font-medium text-accent";
 
 /* ------------------------------------------------------- metric tables */
 
@@ -265,28 +284,41 @@ function MetricTable({ rows, groupKey, groupLabel }) {
   const best = Object.fromEntries(METRICS.map((m) => [m.key, Math.max(...rows.map((r) => r[m.key]))]));
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className="w-full text-base min-w-[640px]">
         <thead>
           <tr className="bg-blush">
             <th className={th}>{groupLabel}</th>
             <th className={thR}>Images</th>
-            {METRICS.map((m) => <th key={m.key} className={thR}>{m.label}</th>)}
+            {METRICS.map((m) => (
+              <th key={m.key} className={thR}>
+                {m.label}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={r[groupKey]} className="border-t border-line-soft">
-              <td className="px-3 py-2">
-                {r[groupKey]}
+            <tr key={r[groupKey]} className="border-t border-rule/60">
+              <td className="px-3 py-3 text-fine">{r[groupKey]}</td>
+              <td className="px-3 py-3 text-right font-mono text-fine text-ink-mid">
+                {r.n.toLocaleString()}
               </td>
-              <td className="px-3 py-2 text-right font-mono text-ink-soft">{r.n.toLocaleString()}</td>
               {METRICS.map((m) => (
-                <td key={m.key} className="px-3 py-2 text-right">
-                  <div className={`font-mono ${r[m.key] === best[m.key] ? "font-semibold" : ""}`}>
+                <td key={m.key} className="px-3 py-3 text-right">
+                  <div
+                    className={`font-mono ${
+                      r[m.key] === best[m.key] ? "font-semibold text-accent" : ""
+                    }`}
+                  >
                     {pct(r[m.key])}
                   </div>
-                  <div className="h-1.5 bg-blush rounded-full mt-1 ml-auto w-24" aria-hidden="true">
-                    <div className="h-full bg-accent rounded-full" style={{ width: `${r[m.key] * 100}%` }} />
+                  <div className="h-1.5 bg-blush rounded-full mt-1.5 ml-auto w-24" aria-hidden="true">
+                    <div
+                      className={`h-full rounded-full ${
+                        r[m.key] === best[m.key] ? "bg-accent" : "bg-line"
+                      }`}
+                      style={{ width: `${r[m.key] * 100}%` }}
+                    />
                   </div>
                 </td>
               ))}
@@ -300,7 +332,7 @@ function MetricTable({ rows, groupKey, groupLabel }) {
 
 function PerClassTable({ rows, groupKey }) {
   return (
-    <table className="w-full text-xs font-mono">
+    <table className="w-full text-data font-mono min-w-[680px]">
       <thead>
         <tr className="bg-blush">
           <th className={th}>{groupKey}</th>
@@ -313,15 +345,17 @@ function PerClassTable({ rows, groupKey }) {
       </thead>
       <tbody>
         {rows.map((r) => (
-          <tr key={`${r[groupKey]}-${r.Class}`} className="border-t border-line-soft">
-            <td className="px-3 py-1.5">{r[groupKey]}</td>
-            <td className="px-3 py-1.5">{r.Class}</td>
+          <tr key={`${r[groupKey]}-${r.Class}`} className="border-t border-rule/50">
+            <td className="px-3 py-2 font-sans text-fine">{r[groupKey]}</td>
+            <td className="px-3 py-2">{r.Class}</td>
             {["TP", "TN", "FP", "FN"].map((k) => (
-              <td key={k} className="px-3 py-1.5 text-right">{r[k]}</td>
+              <td key={k} className="px-3 py-2 text-right text-ink-mid">
+                {r[k]}
+              </td>
             ))}
-            <td className="px-3 py-1.5 text-right">{pct(r.Precision)}</td>
-            <td className="px-3 py-1.5 text-right">{pct(r.Recall)}</td>
-            <td className="px-3 py-1.5 text-right">{pct(r["F1-Score"])}</td>
+            <td className="px-3 py-2 text-right">{pct(r.Precision)}</td>
+            <td className="px-3 py-2 text-right">{pct(r.Recall)}</td>
+            <td className="px-3 py-2 text-right">{pct(r["F1-Score"])}</td>
           </tr>
         ))}
       </tbody>
@@ -334,16 +368,21 @@ function Confusion({ title, matrix }) {
   const total = matrix.rows.flat().reduce((a, b) => a + b, 0);
   return (
     <figure className="min-w-0 max-w-full">
-      <figcaption className="text-[12px] font-semibold mb-1">
-        {title} <span className="font-normal text-ink-soft">({total.toLocaleString()} images)</span>
+      <figcaption className="text-fine font-semibold mb-2">
+        {title}{" "}
+        <span className="font-normal text-ink-mid">({total.toLocaleString()} images)</span>
       </figcaption>
       <div className="overflow-x-auto">
-      <table className="text-[11px] font-mono border-collapse">
+      <table className="text-data font-mono border-collapse">
         <thead>
           <tr>
-            <th className="px-1 py-1 text-[9px] text-ink-soft font-normal text-left">actual ↓ pred →</th>
+            <th className="px-2 py-1.5 text-data text-ink-mid font-normal text-left whitespace-nowrap">
+              actual ↓ / predicted →
+            </th>
             {matrix.labels.map((l) => (
-              <th key={l} className="px-1 py-1 font-normal text-ink-soft">{l.replace("SCC-", "")}</th>
+              <th key={l} className="px-1 py-1.5 font-medium text-ink-mid">
+                {l.replace("SCC-", "")}
+              </th>
             ))}
           </tr>
         </thead>
@@ -352,16 +391,22 @@ function Confusion({ title, matrix }) {
             const rowSum = row.reduce((a, b) => a + b, 0) || 1;
             return (
               <tr key={i}>
-                <th className="px-1 py-1 font-normal text-ink-soft">{matrix.labels[i]}</th>
+                <th className="px-2 py-1.5 font-medium text-ink-mid text-left">
+                  {matrix.labels[i]}
+                </th>
                 {row.map((v, j) => {
                   const share = v / rowSum;
                   return (
                     <td
                       key={j}
                       title={`actual ${matrix.labels[i]}, predicted ${matrix.labels[j]}: ${v} (${pct(share)} of row)`}
-                      className={`w-10 h-8 text-center border border-white ${i === j ? "outline outline-1 outline-accent -outline-offset-2" : ""}`}
+                      className={`w-11 h-9 text-center border-2 border-white ${
+                        i === j ? "outline outline-2 outline-accent -outline-offset-2" : ""
+                      }`}
                       style={{
                         background: `rgba(201, 20, 92, ${0.06 + share * 0.84})`,
+                        // The shade crosses into dark around 45% of a row, and
+                        // the cell count has to stay readable on both sides.
                         color: share > 0.45 ? "#fff" : "#1B1416",
                       }}
                     >
@@ -488,7 +533,7 @@ function ComparePage({ page, baseline, hueview }) {
           Performance by illumination bin
         </SubHead>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-base min-w-[620px]">
             <thead>
               <tr className="bg-blush">
                 <th className={th}>Illumination</th>
@@ -510,21 +555,34 @@ function ComparePage({ page, baseline, hueview }) {
                       className={`border-t ${i === 0 ? "border-line" : "border-line-soft"}`}
                     >
                       {i === 0 && (
-                        <td rowSpan={METRICS.length} className="px-3 py-2 align-top">
+                        <td
+                          rowSpan={METRICS.length}
+                          className="px-3 py-3 align-top text-fine font-medium"
+                        >
                           {p.bin}
-                          <div className="font-mono text-[11px] text-ink-soft">
+                          <div className="font-mono text-data text-ink-mid mt-0.5">
                             {p.n.toLocaleString()} images
                           </div>
                         </td>
                       )}
-                      <td className="px-3 py-2 text-ink-soft">{m.label}</td>
-                      <td className={`px-3 py-2 text-right font-mono ${a > c ? "font-semibold" : ""}`}>
+                      <td className="px-3 py-3 text-fine text-ink-mid">{m.label}</td>
+                      <td
+                        className={`px-3 py-3 text-right font-mono ${a > c ? "font-semibold" : ""}`}
+                      >
                         {pct(a)}
                       </td>
-                      <td className={`px-3 py-2 text-right font-mono ${c > a ? "font-semibold text-accent" : ""}`}>
+                      <td
+                        className={`px-3 py-3 text-right font-mono ${
+                          c > a ? "font-semibold text-accent" : ""
+                        }`}
+                      >
                         {pct(c)}
                       </td>
-                      <td className={`px-3 py-2 text-right font-mono ${d >= 0 ? "text-ok" : "text-ink-soft"}`}>
+                      <td
+                        className={`px-3 py-3 text-right font-mono ${
+                          d >= 0 ? "text-ok" : "text-ink-mid"
+                        }`}
+                      >
                         {signedPts(d)}
                       </td>
                     </tr>
@@ -618,7 +676,7 @@ const METRIC_LABEL = Object.fromEntries(METRICS.map((m) => [m.short, m.label]));
 function TestTable({ rows, aLabel, bLabel, groupLabel }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className="w-full text-base min-w-[560px]">
         <thead>
           <tr className="bg-blush">
             {groupLabel && <th className={th}>{groupLabel}</th>}
@@ -630,12 +688,20 @@ function TestTable({ rows, aLabel, bLabel, groupLabel }) {
         </thead>
         <tbody>
           {rows.map((r) => (
-            <tr key={`${r.stratum}-${r.a}-${r.b}-${r.metric}`} className="border-t border-line-soft">
-              {groupLabel && <td className="px-3 py-2">{r.group}</td>}
-              <td className="px-3 py-2">{METRIC_LABEL[r.metric] ?? r.metric}</td>
-              <td className="px-3 py-2 text-right font-mono">{pct(r.score_a)}</td>
-              <td className="px-3 py-2 text-right font-mono">{pct(r.score_b)}</td>
-              <td className="px-3 py-2 text-right font-mono">{signed(r.score_b - r.score_a)}</td>
+            <tr key={`${r.stratum}-${r.a}-${r.b}-${r.metric}`} className="border-t border-rule/60">
+              {groupLabel && <td className="px-3 py-3 text-fine">{r.group}</td>}
+              <td className="px-3 py-3 text-fine text-ink-mid">
+                {METRIC_LABEL[r.metric] ?? r.metric}
+              </td>
+              <td className="px-3 py-3 text-right font-mono">{pct(r.score_a)}</td>
+              <td className="px-3 py-3 text-right font-mono">{pct(r.score_b)}</td>
+              <td
+                className={`px-3 py-3 text-right font-mono ${
+                  r.score_b - r.score_a >= 0 ? "text-ok" : "text-ink-mid"
+                }`}
+              >
+                {signed(r.score_b - r.score_a)}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -648,9 +714,9 @@ function TestTable({ rows, aLabel, bLabel, groupLabel }) {
 // carries them if they are shown again.
 function HypothesisCard({ code, statement }) {
   return (
-    <div className="border border-line-soft rounded-xl p-4">
-      <div className="font-mono text-[12px] font-semibold text-accent">{code}</div>
-      <p className="text-[13px] mt-1">{statement}</p>
+    <div className="border border-line-soft rounded-readout p-5 bg-blush-soft/40">
+      <div className="font-mono text-fine font-semibold text-accent">{code}</div>
+      <p className="text-fine mt-1.5 leading-relaxed">{statement}</p>
     </div>
   );
 }
@@ -699,7 +765,7 @@ function SignificancePage({ page, block }) {
         />
       </More>
 
-      <p className="text-[12px] text-ink-soft">
+      <p className="text-fine text-ink-mid leading-relaxed">
         Accuracy: McNemar&apos;s test (mid-p). Precision, recall and F1: paired bootstrap with BCa
         intervals. Bonferroni-adjusted α per hypothesis.
       </p>

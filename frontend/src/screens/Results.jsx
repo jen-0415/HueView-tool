@@ -239,7 +239,7 @@ function DetectPanel({ result, preview }) {
         <img
           src={result.image.preview || preview}
           alt="Cropped face"
-          className="w-[224px] h-[224px] object-cover rounded-xl"
+          className="w-[224px] h-[224px] object-cover rounded-readout border border-rule"
         />
         <div className="flex-[1_1_300px] min-w-0">
           <Happened>
@@ -268,21 +268,21 @@ function DetectPanel({ result, preview }) {
 
 function Value({ k, v, children }) {
   return (
-    <div className="grid grid-cols-[170px_minmax(0,1fr)] gap-x-4 gap-y-1 py-3 border-t border-line-soft">
-      <span className="font-mono text-xs text-ink-soft">{k}</span>
-      <span className="font-mono text-base">{v}</span>
-      <span className="col-start-2 text-[13px] text-ink-soft leading-snug">{children}</span>
+    <div className="grid grid-cols-[170px_minmax(0,1fr)] gap-x-4 gap-y-1 py-3.5 border-t border-line-soft">
+      <span className="text-fine text-ink-mid">{k}</span>
+      <span className="font-mono text-lead">{v}</span>
+      <span className="col-start-2 text-fine text-ink-mid leading-snug">{children}</span>
     </div>
   );
 }
 
-function IlluminationPanel({ result }) {
+function IlluminationPanel({ result, arriving }) {
   const il = result.illumination;
   return (
     <>
       <StageHeader id="illum" title="Lighting level" />
       <div className="grid grid-cols-1 md:grid-cols-[320px_1fr] gap-5 items-start">
-        <IlluminationCard illumination={il} />
+        <IlluminationCard illumination={il} arriving={arriving} />
         <Card className="p-6">
           <Happened>
             We measured how bright the photo is and placed it in one of three lighting groups,
@@ -301,7 +301,7 @@ function IlluminationPanel({ result }) {
   );
 }
 
-function SsrPanel({ ssrPreview }) {
+function SsrPanel({ ssrPreview, arriving }) {
   // The backend omits `steps` if its step preview stops matching the real SSR
   // output; fall back to just before/after.
   const steps = ssrPreview
@@ -323,19 +323,25 @@ function SsrPanel({ ssrPreview }) {
           </Happened>
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
             {steps.map((s, i) => (
-              <figure key={s.label}>
+              <figure
+                key={s.label}
+                className={arriving ? "panel-in" : ""}
+                style={arriving ? { animationDelay: `${i * 70}ms` } : undefined}
+              >
                 <img
                   src={s.image}
                   alt={s.label}
-                  className={`w-full aspect-square object-cover rounded-lg ${
-                    i === steps.length - 1 ? "outline outline-2 outline-offset-2 outline-accent" : ""
+                  className={`w-full aspect-square object-cover rounded-readout ${
+                    i === steps.length - 1
+                      ? "outline outline-2 outline-offset-2 outline-accent"
+                      : "border border-rule"
                   }`}
                 />
-                <figcaption className="mt-2">
-                  <div className="font-mono text-[11px] font-semibold">
+                <figcaption className="mt-2.5">
+                  <div className="font-mono text-data text-ink-mid">
                     {String(i + 1).padStart(2, "0")}
                   </div>
-                  <div className="text-xs text-ink-soft leading-snug">{s.label}</div>
+                  <div className="text-fine text-ink-mid leading-snug mt-0.5">{s.label}</div>
                 </figcaption>
               </figure>
             ))}
@@ -385,7 +391,7 @@ function SegmentationPanel({ result }) {
   );
 }
 
-function SkinPanel({ result }) {
+function SkinPanel({ result, arriving }) {
   const { baseline, hueview } = result.models;
   const measured = (hueview.regions ?? []).filter(
     (r) => r.used && typeof r.pixels === "number" && typeof r.L === "number",
@@ -401,7 +407,7 @@ function SkinPanel({ result }) {
     <>
       <StageHeader id="skin" title="Skin pixels and color values" />
       <RegionTable regions={hueview.regions ?? []} />
-      <ColorValuesCard baseline={baseline} hueview={hueview} />
+      <ColorValuesCard baseline={baseline} hueview={hueview} arriving={arriving} />
       <Meaning>
         {fewest && darkest ? (
           <p>
@@ -417,7 +423,7 @@ function SkinPanel({ result }) {
         ) : (
           <p>No area had enough skin to measure.</p>
         )}
-        <p className="text-xs text-ink-soft">
+        <p className="text-fine text-ink-mid">
           L* is lightness, from 0 (black) to 100 (white). a* runs from green (−) to red (+),
           and b* from blue (−) to yellow (+).
         </p>
@@ -491,12 +497,12 @@ function DecisionPanel({ result }) {
   );
 }
 
-function UndertonePanel({ result }) {
+function UndertonePanel({ result, arriving }) {
   const { baseline, hueview } = result.models;
   return (
     <>
       <StageHeader id="under" title="Undertone" />
-      <UndertoneCard baseline={baseline} hueview={hueview} />
+      <UndertoneCard baseline={baseline} hueview={hueview} arriving={arriving} />
     </>
   );
 }
@@ -509,14 +515,15 @@ function ComparePanel({ result }) {
   return (
     <>
       <StageHeader id="compare" title="Baseline vs ChroLumi" />
-      <Card className="overflow-x-auto">
-        <table className="w-full text-sm">
+      <Card>
+        <div className="overflow-x-auto">
+        <table className="w-full text-base min-w-[560px]">
           <thead>
             <tr className="bg-blush">
               {["For this photo", "Baseline", "ChroLumi"].map((h) => (
                 <th
                   key={h}
-                  className="px-5 py-3 text-left font-mono text-[10px] tracking-widest uppercase text-accent font-normal"
+                  className="sticky top-0 bg-blush px-5 py-3 text-left text-fine font-medium text-accent"
                 >
                   {h}
                 </th>
@@ -543,7 +550,8 @@ function ComparePanel({ result }) {
             />
           </tbody>
         </table>
-        <p className="px-5 py-3 border-t border-line-soft text-[11px] italic text-ink-soft">
+        </div>
+        <p className="px-5 py-3.5 border-t border-line-soft text-fine text-ink-mid">
           How undertone is found: the Baseline uses how much blue is in the average color; ChroLumi
           uses the color direction (hue) of each face area.
         </p>
@@ -565,10 +573,12 @@ function ComparePanel({ result }) {
 
 function Row({ k, a, b, highlight }) {
   return (
-    <tr className="border-t border-line-soft">
-      <td className="px-5 py-3 text-ink-soft">{k}</td>
-      <td className={`px-5 py-3 ${highlight ? "font-semibold" : ""}`}>{a}</td>
-      <td className={`px-5 py-3 ${highlight ? "font-semibold text-accent" : ""}`}>{b}</td>
+    <tr className={`border-t border-rule/60 ${highlight ? "bg-blush-soft/50" : ""}`}>
+      <td className="px-5 py-3.5 text-fine text-ink-mid align-top">{k}</td>
+      <td className={`px-5 py-3.5 align-top ${highlight ? "font-semibold" : ""}`}>{a}</td>
+      <td className={`px-5 py-3.5 align-top ${highlight ? "font-semibold text-accent" : ""}`}>
+        {b}
+      </td>
     </tr>
   );
 }

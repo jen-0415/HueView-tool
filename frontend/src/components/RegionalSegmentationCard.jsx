@@ -1,4 +1,4 @@
-import Card from "./Card";
+import Card, { PanelHead } from "./Card";
 import { SCC, sccLabel } from "../constants";
 
 // ChroLumi's regional path, end to end: where each region is on the face,
@@ -7,12 +7,10 @@ import { SCC, sccLabel } from "../constants";
 export default function RegionalSegmentationCard({ hueview }) {
   return (
     <Card>
-      <div className="px-6 py-4 border-b border-line-soft">
-        <div className="font-semibold">Regional segmentation &amp; per-region SCC — ChroLumi</div>
-        <div className="text-xs text-ink-soft">
-          MediaPipe landmarks → convex-hull regions → HSV skin filter → one model per region.
-        </div>
-      </div>
+      <PanelHead
+        title="Regional segmentation and per-region SCC"
+        note="ChroLumi only. MediaPipe landmarks, convex-hull regions, HSV skin filter, one model per region."
+      />
       <SegmentationFigures hueview={hueview} />
       <RegionPredictions hueview={hueview} />
       <DecisionTable hueview={hueview} />
@@ -35,15 +33,19 @@ export function SegmentationFigures({ hueview }) {
     <div className="px-6 py-5 grid grid-cols-1 sm:grid-cols-[auto_auto_1fr] gap-6 items-start">
       <Figure n="01" src={seg.geometric} caption="Face areas outlined from the mapped points" />
       <Figure n="02" src={seg.skin} caption="Skin that was kept (removed parts darkened)" />
-      <ul className="text-[13px] space-y-2 self-center">
+      <ul className="text-fine space-y-2.5 self-center">
         {regions
           .filter((r) => seg.colors[r.region_key])
           .map((r) => (
-            <li key={r.region_key} className="flex items-center gap-2">
-              <span className="w-3 h-3 rounded-sm" style={{ background: colorOf(r.region_key) }} />
-              <span>{r.name}</span>
-              <span className="font-mono text-[11px] text-ink-soft">
-                {r.pixels.toLocaleString()} / {seg.geometric_pixels[r.region_key].toLocaleString()} skin pixels
+            <li key={r.region_key} className="flex items-baseline gap-2.5">
+              <span
+                className="w-3 h-3 rounded-sm shrink-0 translate-y-0.5"
+                style={{ background: colorOf(r.region_key) }}
+              />
+              <span className="shrink-0">{r.name}</span>
+              <span className="font-mono text-data text-ink-mid">
+                {r.pixels.toLocaleString()} of{" "}
+                {seg.geometric_pixels[r.region_key].toLocaleString()} px kept
               </span>
             </li>
           ))}
@@ -59,10 +61,13 @@ export function RegionPredictions({ hueview }) {
 
   return (
       <div className="px-6 py-5">
-        <div className="font-mono text-[11px] font-semibold mb-3">What each model saw, and what it picked</div>
+        <div className="font-semibold text-lead mb-4">What each model saw, and what it picked</div>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
           {regions.map((r) => (
-            <div key={r.region_key ?? r.name} className="rounded-xl border border-line-soft p-2">
+            <div
+              key={r.region_key ?? r.name}
+              className="rounded-readout border border-line-soft p-2.5 hover:border-line transition-colors duration-200"
+            >
               {seg?.inputs?.[r.region_key] && (
                 <img
                   src={seg.inputs[r.region_key]}
@@ -71,21 +76,21 @@ export function RegionPredictions({ hueview }) {
                   style={{ borderColor: colorOf(r.region_key) }}
                 />
               )}
-              <div className="text-[12px] mt-2 leading-tight">{r.name}</div>
-              <div className="flex items-center gap-2 mt-1">
+              <div className="text-fine mt-2.5 leading-tight">{r.name}</div>
+              <div className="flex items-center gap-2 mt-1.5">
                 {r.scc && (
                   <span
-                    className="w-4 h-4 rounded border border-line-soft"
+                    className="w-4 h-4 rounded border border-rule shrink-0"
                     style={{ background: SCC.find((s) => s.id === r.scc)?.hex }}
                   />
                 )}
-                <span className="font-mono text-[12px] font-semibold">{r.scc ?? "—"}</span>
-                <span className="font-mono text-[11px] text-ink-soft">
+                <span className="font-mono text-fine font-semibold">{r.scc ?? "—"}</span>
+                <span className="font-mono text-data text-ink-mid">
                   {r.confidence != null ? `${Math.round(r.confidence * 100)}%` : ""}
                 </span>
               </div>
               {r.status && r.status !== "ok" && (
-                <div className="font-mono text-[10px] text-warm-ink mt-1">status: {r.status}</div>
+                <div className="font-mono text-data text-warm-ink mt-1.5">{r.status}</div>
               )}
             </div>
           ))}
@@ -97,10 +102,14 @@ export function RegionPredictions({ hueview }) {
 function Figure({ n, src, caption }) {
   return (
     <figure className="w-[224px]">
-      <img src={src} alt={caption} className="w-[224px] h-[224px] rounded-lg" />
-      <figcaption className="mt-2">
-        <div className="font-mono text-[11px] font-semibold">{n}</div>
-        <div className="text-[12px] text-ink-soft leading-snug">{caption}</div>
+      <img
+        src={src}
+        alt={caption}
+        className="w-[224px] h-[224px] rounded-readout border border-rule"
+      />
+      <figcaption className="mt-2.5">
+        <div className="font-mono text-data text-ink-mid">{n}</div>
+        <div className="text-fine text-ink-mid leading-snug mt-0.5">{caption}</div>
       </figcaption>
     </figure>
   );
@@ -117,19 +126,23 @@ export function DecisionTable({ hueview }) {
   const pct = (p) => (p == null ? "—" : `${(p * 100).toFixed(1)}%`);
   const argmax = (ps) => ps.indexOf(Math.max(...ps));
   const finalIdx = SCC.findIndex((s) => s.id === hueview.scc);
-  const headCls = "px-3 py-2 text-right font-normal text-[10px] tracking-widest text-accent";
+  const headCls = "sticky top-0 bg-blush px-3 py-2.5 text-right font-medium text-fine text-accent";
 
   return (
     <div className="border-t border-line-soft">
-      <div className="px-6 pt-4">
-        <div className="font-mono text-[11px] font-semibold">How the final answer is chosen</div>
-        <p className="text-[12px] leading-relaxed text-ink-soft mt-1 text-justify">{hueview.decision?.description}</p>
+      <div className="px-6 pt-5">
+        <div className="font-semibold text-lead">How the final answer is chosen</div>
+        <p className="text-fine leading-relaxed text-ink-mid mt-1">
+          {hueview.decision?.description}
+        </p>
       </div>
       <div className="overflow-x-auto px-6 py-4">
-        <table className="w-full font-mono text-xs">
+        <table className="w-full font-mono text-data min-w-[620px]">
           <thead>
             <tr className="bg-blush">
-              <th className="px-3 py-2 text-left font-normal text-[10px] tracking-widest text-accent">Model</th>
+              <th className="sticky top-0 bg-blush px-3 py-2.5 text-left font-medium text-fine text-accent">
+                Model
+              </th>
               {SCC.map((s) => (
                 <th key={s.id} className={headCls}>
                   {s.id}
@@ -142,22 +155,29 @@ export function DecisionTable({ hueview }) {
             {regions.map((r) => {
               const top = argmax(r.probabilities);
               return (
-                <tr key={r.region_key ?? r.name} className="border-t border-line-soft">
-                  <td className="px-3 py-2">{r.name}</td>
+                <tr key={r.region_key ?? r.name} className="border-t border-rule/60">
+                  <td className="px-3 py-2.5 font-sans text-fine">{r.name}</td>
                   {r.probabilities.map((p, i) => (
-                    <td key={i} className={`px-3 py-2 text-right ${i === top ? "font-semibold" : "text-ink-soft"}`}>
+                    <td
+                      key={i}
+                      className={`px-3 py-2.5 text-right ${
+                        i === top ? "font-semibold text-ink" : "text-ink-mid"
+                      }`}
+                    >
                       {pct(p)}
                     </td>
                   ))}
-                  <td className="px-3 py-2 text-right font-semibold">{r.scc}</td>
+                  <td className="px-3 py-2.5 text-right font-semibold">{r.scc}</td>
                 </tr>
               );
             })}
             {mean && (
               <tr className="border-t-2 border-accent">
-                <td className="px-3 py-2 text-ink-soft">Average of {regions.length} (only used to break a tie)</td>
+                <td className="px-3 py-2.5 font-sans text-fine text-ink-mid">
+                  Average of {regions.length}, used only to break a tie
+                </td>
                 {mean.map((p, i) => (
-                  <td key={i} className="px-3 py-2 text-right text-ink-soft">
+                  <td key={i} className="px-3 py-2.5 text-right text-ink-mid">
                     {pct(p)}
                   </td>
                 ))}
@@ -165,26 +185,33 @@ export function DecisionTable({ hueview }) {
               </tr>
             )}
             {hueview.votes && (
-              <tr className="border-t border-line-soft bg-blush-soft">
-                <td className="px-3 py-2 font-semibold text-accent">Votes → final</td>
+              <tr className="border-t border-rule bg-blush-soft">
+                <td className="px-3 py-2.5 font-sans text-fine font-semibold text-accent">
+                  Votes, and the final class
+                </td>
                 {SCC.map((s, i) => (
                   <td
                     key={s.id}
-                    className={`px-3 py-2 text-right ${i === finalIdx ? "font-semibold text-accent" : ""}`}
+                    className={`px-3 py-2.5 text-right ${
+                      i === finalIdx ? "font-semibold text-accent" : "text-ink-mid"
+                    }`}
                   >
                     {votes[s.id] ?? 0}
                   </td>
                 ))}
-                <td className="px-3 py-2 text-right font-semibold text-accent">{hueview.scc}</td>
+                <td className="px-3 py-2.5 text-right font-semibold text-accent">{hueview.scc}</td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
       {hueview.scc && (
-        <p className="px-6 pb-5 text-[13px]">
-          ChroLumi&apos;s final answer: <span className="font-semibold text-accent">{hueview.scc} — {sccLabel(hueview.scc)}</span>
-          <span className="text-ink-soft">
+        <p className="px-6 pb-5 text-base">
+          ChroLumi&apos;s final answer:{" "}
+          <span className="font-semibold text-accent">
+            {hueview.scc} {sccLabel(hueview.scc)}
+          </span>
+          <span className="text-ink-mid">
             {" "}
             ({votes[hueview.scc] ?? "?"} of {regions.length} models picked it
             {hueview.tied ? "; it was a tie, so the higher average score decided" : ""})

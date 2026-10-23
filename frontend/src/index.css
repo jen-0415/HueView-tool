@@ -71,6 +71,24 @@
   .panel-in {
     animation: panel-in 180ms cubic-bezier(.2, .8, .2, 1) both;
   }
+
+  /* A marker on a signed axis cannot grow from one end without implying the
+     wrong origin, so it settles into place instead. */
+  .cue-in {
+    animation: cue-in 320ms cubic-bezier(.2, .8, .2, 1) both;
+    animation-delay: var(--measure-delay, 0ms);
+  }
+}
+
+@keyframes cue-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
 }
 
 @keyframes measure-in {
