@@ -1,5 +1,5 @@
 import { useState } from "react";
-import Card from "../components/Card";
+import Card, { Reading } from "../components/Card";
 import { useEvaluation } from "../useEvaluation";
 
 // Evaluation results from the saved result files (GET /api/evaluation): the
@@ -61,6 +61,7 @@ export default function Evaluation() {
       <EvaluationSidebar page={page} onPick={pick} data={data} />
 
       <section className="flex-1 min-w-0 w-full flex flex-col gap-5">
+        <div key={page} className="panel-in flex flex-col gap-5">
         {page === "baseline" && (
           <LightingPage
             page={PAGES[0]}
@@ -84,15 +85,16 @@ export default function Evaluation() {
         )}
         {page === "regions" && <RegionPage page={PAGES[3]} block={data.regions} />}
         {page === "tests" && <SignificancePage page={PAGES[4]} block={data.significance} />}
+        </div>
 
         <div className="flex justify-between gap-3 flex-wrap border-t border-line pt-4">
           <div>
             {idx > 0 && (
               <button
                 onClick={() => pick(PAGES[idx - 1].id)}
-                className="rounded-full bg-white border border-line text-accent text-sm px-4 min-h-[44px]"
+                className="rounded-full bg-white border border-line text-accent text-fine px-5 min-h-[44px] hover:border-accent transition-colors duration-200"
               >
-                ← {PAGES[idx - 1].label}
+                <span className="text-ink-mid">Back to</span> {PAGES[idx - 1].label}
               </button>
             )}
           </div>
@@ -100,9 +102,9 @@ export default function Evaluation() {
             {idx < PAGES.length - 1 && (
               <button
                 onClick={() => pick(PAGES[idx + 1].id)}
-                className="rounded-full bg-accent text-white text-sm font-semibold px-5 min-h-[44px]"
+                className="rounded-full bg-accent text-white text-fine font-semibold px-5 min-h-[44px] hover:bg-accent-light transition-colors duration-200"
               >
-                {PAGES[idx + 1].label} →
+                Next: {PAGES[idx + 1].label}
               </button>
             )}
           </div>
@@ -123,9 +125,12 @@ function EvaluationSidebar({ page, onPick, data }) {
       aria-label="Evaluation results"
       className="w-full lg:w-[270px] lg:shrink-0 flex flex-col gap-4 lg:sticky lg:top-6"
     >
-      <Card className="p-4">
-        <div className="font-mono text-[11px] tracking-widest uppercase text-ink-soft">Test set</div>
-        <div className="font-display text-2xl mt-0.5">{data.n_test.toLocaleString()} images</div>
+      <Card tier="readout" className="px-5 py-4">
+        <div className="text-data text-ink-mid">Test set</div>
+        <div className="font-display text-head font-semibold mt-0.5">
+          {data.n_test.toLocaleString()}
+        </div>
+        <div className="text-fine text-ink-mid">images</div>
       </Card>
 
       <div className="lg:hidden">
@@ -133,7 +138,7 @@ function EvaluationSidebar({ page, onPick, data }) {
           aria-label="Result page"
           value={page}
           onChange={(e) => onPick(e.target.value)}
-          className="w-full min-h-[48px] rounded-xl border border-line bg-white px-3 text-[15px] font-semibold"
+          className="w-full min-h-[48px] rounded-readout border border-line bg-white px-3 text-base font-semibold"
         >
           {groups.map((g) => (
             <optgroup key={g} label={g}>
@@ -147,30 +152,57 @@ function EvaluationSidebar({ page, onPick, data }) {
         </select>
       </div>
 
-      <Card className="hidden lg:flex p-2.5 flex-col gap-0.5">
+      <Card className="hidden lg:block p-2.5">
         {groups.map((g) => (
-          <div key={g} className="flex flex-col gap-0.5">
-            <div className="font-mono text-[11px] tracking-widest uppercase text-ink-soft px-3 pt-3.5 pb-1.5">
-              {g}
-            </div>
-            {PAGES.filter((q) => q.group === g).map((q) => {
-              const active = page === q.id;
-              return (
-                <button
-                  key={q.id}
-                  onClick={() => onPick(q.id)}
-                  aria-current={active ? "page" : undefined}
-                  className={`flex items-center gap-2.5 w-full min-h-[44px] px-3 py-2 rounded-[10px] text-left text-sm ${
-                    active ? "bg-accent text-white" : "text-ink hover:bg-blush-soft"
-                  }`}
-                >
-                  <span className={`font-mono text-[11px] w-5 ${active ? "text-[#FFE3EE]" : "text-ink-soft"}`}>
-                    {q.n}
-                  </span>
-                  <span className="flex-1">{q.label}</span>
-                </button>
-              );
-            })}
+          <div key={g}>
+            <div className="text-data text-ink-mid px-3 pt-4 pb-2">{g}</div>
+            <ol className="relative">
+              {PAGES.filter((q) => q.group === g).map((q, i, arr) => {
+                const active = page === q.id;
+                return (
+                  <li key={q.id} className="relative">
+                    {/* Same rail as the analysis sidebar. A summary page is not
+                        a numbered step, so its node is hollow. */}
+                    {arr.length > 1 && (
+                      <span
+                        aria-hidden="true"
+                        className={`absolute left-[15px] w-[2px] bg-line ${
+                          i === 0
+                            ? "top-1/2 bottom-0"
+                            : i === arr.length - 1
+                              ? "top-0 bottom-1/2"
+                              : "inset-y-0"
+                        }`}
+                      />
+                    )}
+                    <button
+                      onClick={() => onPick(q.id)}
+                      aria-current={active ? "page" : undefined}
+                      className={`relative flex items-center gap-3 w-full min-h-[44px] pl-9 pr-3 py-2 rounded-[10px] text-left text-fine transition-colors duration-200 ${
+                        active ? "bg-accent text-white" : "text-ink hover:bg-blush-soft"
+                      }`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className={`absolute left-[9px] w-3.5 h-3.5 rounded-full border-2 ${
+                          active
+                            ? "bg-white border-white"
+                            : q.extra
+                              ? "bg-blush border-line"
+                              : "bg-white border-ink-soft"
+                        }`}
+                      />
+                      <span
+                        className={`font-mono text-data ${active ? "text-blush" : "text-ink-mid"}`}
+                      >
+                        {q.n}
+                      </span>
+                      <span className="flex-1">{q.label}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
           </div>
         ))}
       </Card>
@@ -181,24 +213,23 @@ function EvaluationSidebar({ page, onPick, data }) {
 /* ------------------------------------------------------------------ layout */
 
 function Page({ page, title, description, findings, children }) {
+  const numbered = PAGES.filter((q) => !q.extra).length;
   return (
     <>
       <div>
-        <div className="font-mono text-[11px] tracking-widest uppercase text-ink-soft">
-          {page.extra
-            ? `Summary · ${page.group}`
-            : `${page.n} of ${String(PAGES.filter((q) => !q.extra).length).padStart(2, "0")} · ${page.group}`}
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="font-mono text-data text-ink-mid">
+            {page.extra ? "Summary" : `${page.n} of ${String(numbered).padStart(2, "0")}`}
+          </span>
+          <span className="rounded-full bg-neutraltone text-ink-mid px-2.5 py-0.5 text-data">
+            {page.group}
+          </span>
         </div>
-        <h2 className="font-display text-[32px] font-medium mt-1.5">{title}</h2>
-        <p className="text-sm leading-relaxed text-[#3A2A2E] mt-1 text-justify">{description}</p>
+        <h2 className="font-display text-head font-semibold mt-2">{title}</h2>
+        <p className="text-base leading-relaxed text-ink-mid mt-2">{description}</p>
       </div>
-      {findings && (
-        <div className="bg-blush-soft border border-line rounded-[14px] px-5 py-4">
-          <div className="font-mono text-[11px] tracking-widest uppercase text-accent">Key findings</div>
-          <div className="mt-2 text-[15px] leading-relaxed space-y-2 text-justify">{findings}</div>
-        </div>
-      )}
-      <Card className="px-4 sm:px-6 py-5 flex flex-col gap-6 min-w-0">{children}</Card>
+      {findings && <Reading>{findings}</Reading>}
+      <Card className="px-4 sm:px-6 py-5 flex flex-col gap-7 min-w-0">{children}</Card>
     </>
   );
 }
@@ -206,16 +237,18 @@ function Page({ page, title, description, findings, children }) {
 function SubHead({ children, note }) {
   return (
     <div>
-      <div className="font-mono text-[11px] font-semibold">{children}</div>
-      {note && <p className="text-[12px] text-ink-soft mt-0.5">{note}</p>}
+      <div className="font-semibold text-lead">{children}</div>
+      {note && <p className="text-fine text-ink-mid mt-0.5">{note}</p>}
     </div>
   );
 }
 
 function More({ title, children }) {
   return (
-    <details className="border border-line-soft rounded-xl group">
-      <summary className="cursor-pointer px-4 py-3 text-[13px] text-accent select-none">{title}</summary>
+    <details className="border border-line-soft rounded-panel group">
+      <summary className="cursor-pointer px-4 py-3 text-fine text-accent select-none hover:bg-blush-soft rounded-panel transition-colors duration-200">
+        {title}
+      </summary>
       <div className="px-4 pb-4 overflow-x-auto">{children}</div>
     </details>
   );
